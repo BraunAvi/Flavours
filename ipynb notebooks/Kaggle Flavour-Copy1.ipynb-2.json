@@ -1,0 +1,2024 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "\n",
+    "# Recall about decision trees"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "collapsed": false,
+    "slideshow": {
+     "slide_type": "skip"
+    }
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/root/miniconda/envs/rep_py2/lib/python2.7/site-packages/sklearn/cross_validation.py:44: DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. Also note that the interface of the new CV iterators are different from that of this module. This module will be removed in 0.20.\n",
+      "  \"This module will be removed in 0.20.\", DeprecationWarning)\n",
+      "/root/miniconda/envs/rep_py2/lib/python2.7/site-packages/sklearn/grid_search.py:43: DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. This module will be removed in 0.20.\n",
+      "  DeprecationWarning)\n"
+     ]
+    }
+   ],
+   "source": [
+    "%matplotlib inline\n",
+    "\n",
+    "# !pip install -U scikit-learn\n",
+    "# !pip install mlxtend\n",
+    "\n",
+    "import numpy\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import pandas\n",
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "from sklearn.cross_validation import train_test_split\n",
+    "from sklearn.metrics import mean_squared_error\n",
+    "from sklearn.metrics import roc_auc_score\n",
+    "from sklearn.grid_search import GridSearchCV\n",
+    "\n",
+    "from sklearn import model_selection\n",
+    "from sklearn.linear_model import LogisticRegression\n",
+    "from sklearn.neighbors import KNeighborsClassifier\n",
+    "from sklearn.naive_bayes import GaussianNB \n",
+    "from sklearn.ensemble import RandomForestClassifier\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "from sklearn.linear_model import Ridge, LinearRegression\n",
+    "from sklearn.ensemble import BaggingClassifier\n",
+    "from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Tracks preprocessing: \n",
+    "take only one track with the maximum transverse momentum as the most relevant track to define the flavour of B meson"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def take_max_pt_tracks_ids(track_pts, ids):\n",
+    "    \"\"\"\n",
+    "    max is computing over tracks in the same collision for the same data\n",
+    "    \"\"\"\n",
+    "    # using trick from http://arogozhnikov.github.io/2015/09/30/NumpyTipsAndTricks2.html\n",
+    "    ids_unique, ids_enumerated = numpy.unique(ids, return_inverse=True)\n",
+    "\n",
+    "    track_sorter = numpy.argsort(track_pts)\n",
+    "    # order of track in pt\n",
+    "    track_ordered = numpy.argsort(track_sorter)\n",
+    "\n",
+    "    top_track = numpy.zeros(len(ids_unique), dtype=int)\n",
+    "    numpy.maximum.at(top_track, ids_enumerated, track_ordered)\n",
+    "    top_track = track_sorter[top_track]\n",
+    "    return top_track"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# define the function to create submission\n",
+    "from IPython.display import FileLink\n",
+    "def create_solution(predictions, filename='2-flavour-predictions.csv'):\n",
+    "    result = pandas.DataFrame({'ID': numpy.arange(len(predictions)), 'Prediction': predictions})\n",
+    "    result.to_csv('data/{}'.format(filename), index=False)\n",
+    "    return FileLink('data/{}'.format(filename))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# !wget -O ./data/trainingB.root https://www.dropbox.com/s/qu55m3xklxwyyht/trainingB.root?dl=0\n",
+    "# !wget -O ./data/trainingTrack.root https://www.dropbox.com/s/95s7nb7cnfmczw4/trainingTrack.root?dl=0\n",
+    "# !wget -O ./data/testB.root https://www.dropbox.com/s/hgjg369dmnkgxwa/testB.root?dl=0\n",
+    "# !wget -O ./data/testTrack.root https://www.dropbox.com/s/aekzjr4mo3g34ry/testTrack.root?dl=0"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# use root_numpy, pythonic wrapper over ROOT, to read data from the file\n",
+    "# convert read data into pandas\n",
+    "import root_numpy\n",
+    "# read dataset with B-meson description\n",
+    "dataB = pandas.DataFrame(root_numpy.root2array('./data/trainingB.root', treename='tree'))\n",
+    "# read dataset with all other tracks description in the collision\n",
+    "dataTrack = pandas.DataFrame(root_numpy.root2array('./data/trainingTrack.root', treename='tree'))\n",
+    "# dataB\n",
+    "# read test samples with the same structure\n",
+    "kaggle_dataB = pandas.DataFrame(root_numpy.root2array('./data/testB.root', treename='tree'))\n",
+    "kaggle_dataTrack = pandas.DataFrame(root_numpy.root2array('./data/testTrack.root', treename='tree'))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(250000, 5)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ID</th>\n",
+       "      <th>ptB</th>\n",
+       "      <th>etaB</th>\n",
+       "      <th>phiB</th>\n",
+       "      <th>chargeB</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>0</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1</td>\n",
+       "      <td>9.074567</td>\n",
+       "      <td>3.839642</td>\n",
+       "      <td>0.803946</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>2</td>\n",
+       "      <td>5.604867</td>\n",
+       "      <td>3.031174</td>\n",
+       "      <td>6.268456</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>3</td>\n",
+       "      <td>5.689791</td>\n",
+       "      <td>3.920532</td>\n",
+       "      <td>5.792208</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>4</td>\n",
+       "      <td>7.166367</td>\n",
+       "      <td>2.956910</td>\n",
+       "      <td>2.446713</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   ID       ptB      etaB      phiB  chargeB\n",
+       "0   0  2.064923  4.255869  4.096291        1\n",
+       "1   1  9.074567  3.839642  0.803946       -1\n",
+       "2   2  5.604867  3.031174  6.268456       -1\n",
+       "3   3  5.689791  3.920532  5.792208        1\n",
+       "4   4  7.166367  2.956910  2.446713        1"
+      ]
+     },
+     "execution_count": 6,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "print dataB.shape\n",
+    "dataB.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(2414776, 17)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ID</th>\n",
+       "      <th>ptTrack</th>\n",
+       "      <th>etaTrack</th>\n",
+       "      <th>phiTrack</th>\n",
+       "      <th>track_quality</th>\n",
+       "      <th>PIDe</th>\n",
+       "      <th>PIDk</th>\n",
+       "      <th>PIDmu</th>\n",
+       "      <th>PIDpi</th>\n",
+       "      <th>PIDp</th>\n",
+       "      <th>PIDghost</th>\n",
+       "      <th>IP</th>\n",
+       "      <th>IPerr</th>\n",
+       "      <th>vertexIP</th>\n",
+       "      <th>EOverP</th>\n",
+       "      <th>Edx</th>\n",
+       "      <th>chargeTrack</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>0</td>\n",
+       "      <td>3.122201</td>\n",
+       "      <td>3.719456</td>\n",
+       "      <td>4.323421</td>\n",
+       "      <td>1.630143</td>\n",
+       "      <td>5.306696e-04</td>\n",
+       "      <td>0.640957</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.703629</td>\n",
+       "      <td>0.000070</td>\n",
+       "      <td>0.031249</td>\n",
+       "      <td>9.268527</td>\n",
+       "      <td>0.010537</td>\n",
+       "      <td>3.450082</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.881765</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>0</td>\n",
+       "      <td>2.177951</td>\n",
+       "      <td>2.121020</td>\n",
+       "      <td>6.122622</td>\n",
+       "      <td>1.096576</td>\n",
+       "      <td>7.339656e-05</td>\n",
+       "      <td>0.000198</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.985658</td>\n",
+       "      <td>0.001393</td>\n",
+       "      <td>0.001943</td>\n",
+       "      <td>0.103917</td>\n",
+       "      <td>0.020943</td>\n",
+       "      <td>520.172180</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.832958</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>0</td>\n",
+       "      <td>1.416451</td>\n",
+       "      <td>3.147866</td>\n",
+       "      <td>2.778954</td>\n",
+       "      <td>1.169991</td>\n",
+       "      <td>3.348872e-04</td>\n",
+       "      <td>0.054081</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.568771</td>\n",
+       "      <td>0.188799</td>\n",
+       "      <td>0.011440</td>\n",
+       "      <td>0.032704</td>\n",
+       "      <td>0.023889</td>\n",
+       "      <td>255.362961</td>\n",
+       "      <td>0.698145</td>\n",
+       "      <td>0.869784</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>0</td>\n",
+       "      <td>1.039049</td>\n",
+       "      <td>1.992837</td>\n",
+       "      <td>3.910394</td>\n",
+       "      <td>0.643400</td>\n",
+       "      <td>1.908508e-07</td>\n",
+       "      <td>0.000090</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.996812</td>\n",
+       "      <td>0.000584</td>\n",
+       "      <td>0.001059</td>\n",
+       "      <td>0.018182</td>\n",
+       "      <td>0.023879</td>\n",
+       "      <td>324.237823</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.904225</td>\n",
+       "      <td>-1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>0</td>\n",
+       "      <td>0.737614</td>\n",
+       "      <td>3.077182</td>\n",
+       "      <td>4.055139</td>\n",
+       "      <td>1.252629</td>\n",
+       "      <td>1.325996e-03</td>\n",
+       "      <td>0.634082</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.035756</td>\n",
+       "      <td>0.304926</td>\n",
+       "      <td>0.006668</td>\n",
+       "      <td>17.069895</td>\n",
+       "      <td>0.016652</td>\n",
+       "      <td>7.975696</td>\n",
+       "      <td>0.718094</td>\n",
+       "      <td>0.916197</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   ID   ptTrack  etaTrack  phiTrack  track_quality          PIDe      PIDk  \\\n",
+       "0   0  3.122201  3.719456  4.323421       1.630143  5.306696e-04  0.640957   \n",
+       "1   0  2.177951  2.121020  6.122622       1.096576  7.339656e-05  0.000198   \n",
+       "2   0  1.416451  3.147866  2.778954       1.169991  3.348872e-04  0.054081   \n",
+       "3   0  1.039049  1.992837  3.910394       0.643400  1.908508e-07  0.000090   \n",
+       "4   0  0.737614  3.077182  4.055139       1.252629  1.325996e-03  0.634082   \n",
+       "\n",
+       "   PIDmu     PIDpi      PIDp  PIDghost         IP     IPerr    vertexIP  \\\n",
+       "0   -999  0.703629  0.000070  0.031249   9.268527  0.010537    3.450082   \n",
+       "1   -999  0.985658  0.001393  0.001943   0.103917  0.020943  520.172180   \n",
+       "2   -999  0.568771  0.188799  0.011440   0.032704  0.023889  255.362961   \n",
+       "3   -999  0.996812  0.000584  0.001059   0.018182  0.023879  324.237823   \n",
+       "4   -999  0.035756  0.304926  0.006668  17.069895  0.016652    7.975696   \n",
+       "\n",
+       "       EOverP       Edx  chargeTrack  \n",
+       "0 -999.000000  0.881765           -1  \n",
+       "1 -999.000000  0.832958           -1  \n",
+       "2    0.698145  0.869784            1  \n",
+       "3 -999.000000  0.904225           -1  \n",
+       "4    0.718094  0.916197            1  "
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "print dataTrack.shape\n",
+    "dataTrack.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# # plot number of tracks in each collision\n",
+    "# _, n_tracks = numpy.unique(dataTrack.ID, return_counts=True)\n",
+    "# plt.hist(n_tracks, bins=11, range=(0, 11))    \n",
+    "# plt.title('Number of tracks')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(2414776, 20)\n",
+      "(2414776, 17)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ptTrack</th>\n",
+       "      <th>etaTrack</th>\n",
+       "      <th>phiTrack</th>\n",
+       "      <th>track_quality</th>\n",
+       "      <th>PIDe</th>\n",
+       "      <th>PIDk</th>\n",
+       "      <th>PIDmu</th>\n",
+       "      <th>PIDpi</th>\n",
+       "      <th>PIDp</th>\n",
+       "      <th>PIDghost</th>\n",
+       "      <th>IP</th>\n",
+       "      <th>IPerr</th>\n",
+       "      <th>vertexIP</th>\n",
+       "      <th>EOverP</th>\n",
+       "      <th>Edx</th>\n",
+       "      <th>chargeTrack</th>\n",
+       "      <th>ptB</th>\n",
+       "      <th>etaB</th>\n",
+       "      <th>phiB</th>\n",
+       "      <th>ID</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>3.122201</td>\n",
+       "      <td>3.719456</td>\n",
+       "      <td>4.323421</td>\n",
+       "      <td>1.630143</td>\n",
+       "      <td>5.306696e-04</td>\n",
+       "      <td>0.640957</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.703629</td>\n",
+       "      <td>0.000070</td>\n",
+       "      <td>0.031249</td>\n",
+       "      <td>9.268527</td>\n",
+       "      <td>0.010537</td>\n",
+       "      <td>3.450082</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.881765</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>2.177951</td>\n",
+       "      <td>2.121020</td>\n",
+       "      <td>6.122622</td>\n",
+       "      <td>1.096576</td>\n",
+       "      <td>7.339656e-05</td>\n",
+       "      <td>0.000198</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.985658</td>\n",
+       "      <td>0.001393</td>\n",
+       "      <td>0.001943</td>\n",
+       "      <td>0.103917</td>\n",
+       "      <td>0.020943</td>\n",
+       "      <td>520.172180</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.832958</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1.416451</td>\n",
+       "      <td>3.147866</td>\n",
+       "      <td>2.778954</td>\n",
+       "      <td>1.169991</td>\n",
+       "      <td>3.348872e-04</td>\n",
+       "      <td>0.054081</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.568771</td>\n",
+       "      <td>0.188799</td>\n",
+       "      <td>0.011440</td>\n",
+       "      <td>0.032704</td>\n",
+       "      <td>0.023889</td>\n",
+       "      <td>255.362961</td>\n",
+       "      <td>0.698145</td>\n",
+       "      <td>0.869784</td>\n",
+       "      <td>1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1.039049</td>\n",
+       "      <td>1.992837</td>\n",
+       "      <td>3.910394</td>\n",
+       "      <td>0.643400</td>\n",
+       "      <td>1.908508e-07</td>\n",
+       "      <td>0.000090</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.996812</td>\n",
+       "      <td>0.000584</td>\n",
+       "      <td>0.001059</td>\n",
+       "      <td>0.018182</td>\n",
+       "      <td>0.023879</td>\n",
+       "      <td>324.237823</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.904225</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>0.737614</td>\n",
+       "      <td>3.077182</td>\n",
+       "      <td>4.055139</td>\n",
+       "      <td>1.252629</td>\n",
+       "      <td>1.325996e-03</td>\n",
+       "      <td>0.634082</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.035756</td>\n",
+       "      <td>0.304926</td>\n",
+       "      <td>0.006668</td>\n",
+       "      <td>17.069895</td>\n",
+       "      <td>0.016652</td>\n",
+       "      <td>7.975696</td>\n",
+       "      <td>0.718094</td>\n",
+       "      <td>0.916197</td>\n",
+       "      <td>1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "    ptTrack  etaTrack  phiTrack  track_quality          PIDe      PIDk  PIDmu  \\\n",
+       "0  3.122201  3.719456  4.323421       1.630143  5.306696e-04  0.640957   -999   \n",
+       "1  2.177951  2.121020  6.122622       1.096576  7.339656e-05  0.000198   -999   \n",
+       "2  1.416451  3.147866  2.778954       1.169991  3.348872e-04  0.054081   -999   \n",
+       "3  1.039049  1.992837  3.910394       0.643400  1.908508e-07  0.000090   -999   \n",
+       "4  0.737614  3.077182  4.055139       1.252629  1.325996e-03  0.634082   -999   \n",
+       "\n",
+       "      PIDpi      PIDp  PIDghost         IP     IPerr    vertexIP      EOverP  \\\n",
+       "0  0.703629  0.000070  0.031249   9.268527  0.010537    3.450082 -999.000000   \n",
+       "1  0.985658  0.001393  0.001943   0.103917  0.020943  520.172180 -999.000000   \n",
+       "2  0.568771  0.188799  0.011440   0.032704  0.023889  255.362961    0.698145   \n",
+       "3  0.996812  0.000584  0.001059   0.018182  0.023879  324.237823 -999.000000   \n",
+       "4  0.035756  0.304926  0.006668  17.069895  0.016652    7.975696    0.718094   \n",
+       "\n",
+       "        Edx  chargeTrack       ptB      etaB      phiB  ID  \n",
+       "0  0.881765           -1  2.064923  4.255869  4.096291   0  \n",
+       "1  0.832958           -1  2.064923  4.255869  4.096291   0  \n",
+       "2  0.869784            1  2.064923  4.255869  4.096291   0  \n",
+       "3  0.904225           -1  2.064923  4.255869  4.096291   0  \n",
+       "4  0.916197            1  2.064923  4.255869  4.096291   0  "
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Join dataTrack and B datasets:\n",
+    "joined_data = dataTrack.join(dataB, on='ID', lsuffix='_track', rsuffix='_B')\n",
+    "# create ID column\n",
+    "joined_data['ID'] = joined_data['ID_B']\n",
+    "# remove unnecessary IDs\n",
+    "joined_data = joined_data.drop(['ID_B', 'ID_track','chargeB'], axis=1)\n",
+    "\n",
+    "print joined_data.shape\n",
+    "print dataTrack.shape\n",
+    "joined_data.head()\n",
+    "# same for Kaggle DB:\n",
+    "kaggle_joined_data = kaggle_dataTrack.join(kaggle_dataB, on='ID', lsuffix='_track', rsuffix='_B')\n",
+    "# create ID column\n",
+    "kaggle_joined_data['ID'] = kaggle_joined_data['ID_B']\n",
+    "# remove unnecessary IDs\n",
+    "kaggle_joined_data = kaggle_joined_data.drop(['ID_B', 'ID_track'], axis=1)\n",
+    "joined_data.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(2414776, 17)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ptTrack</th>\n",
+       "      <th>etaTrack</th>\n",
+       "      <th>phiTrack</th>\n",
+       "      <th>track_quality</th>\n",
+       "      <th>PIDe</th>\n",
+       "      <th>PIDk</th>\n",
+       "      <th>PIDmu</th>\n",
+       "      <th>PIDpi</th>\n",
+       "      <th>PIDp</th>\n",
+       "      <th>PIDghost</th>\n",
+       "      <th>IP</th>\n",
+       "      <th>IPerr</th>\n",
+       "      <th>vertexIP</th>\n",
+       "      <th>EOverP</th>\n",
+       "      <th>Edx</th>\n",
+       "      <th>chargeTrack</th>\n",
+       "      <th>ptB</th>\n",
+       "      <th>etaB</th>\n",
+       "      <th>phiB</th>\n",
+       "      <th>ID</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>2.177951</td>\n",
+       "      <td>2.121020</td>\n",
+       "      <td>6.122622</td>\n",
+       "      <td>1.096576</td>\n",
+       "      <td>7.339656e-05</td>\n",
+       "      <td>0.000198</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.985658</td>\n",
+       "      <td>0.001393</td>\n",
+       "      <td>0.001943</td>\n",
+       "      <td>0.103917</td>\n",
+       "      <td>0.020943</td>\n",
+       "      <td>520.172180</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.832958</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1.416451</td>\n",
+       "      <td>3.147866</td>\n",
+       "      <td>2.778954</td>\n",
+       "      <td>1.169991</td>\n",
+       "      <td>3.348872e-04</td>\n",
+       "      <td>0.054081</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.568771</td>\n",
+       "      <td>0.188799</td>\n",
+       "      <td>0.011440</td>\n",
+       "      <td>0.032704</td>\n",
+       "      <td>0.023889</td>\n",
+       "      <td>255.362961</td>\n",
+       "      <td>0.698145</td>\n",
+       "      <td>0.869784</td>\n",
+       "      <td>1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1.039049</td>\n",
+       "      <td>1.992837</td>\n",
+       "      <td>3.910394</td>\n",
+       "      <td>0.643400</td>\n",
+       "      <td>1.908508e-07</td>\n",
+       "      <td>0.000090</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.996812</td>\n",
+       "      <td>0.000584</td>\n",
+       "      <td>0.001059</td>\n",
+       "      <td>0.018182</td>\n",
+       "      <td>0.023879</td>\n",
+       "      <td>324.237823</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.904225</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>0.737614</td>\n",
+       "      <td>3.077182</td>\n",
+       "      <td>4.055139</td>\n",
+       "      <td>1.252629</td>\n",
+       "      <td>1.325996e-03</td>\n",
+       "      <td>0.634082</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.035756</td>\n",
+       "      <td>0.304926</td>\n",
+       "      <td>0.006668</td>\n",
+       "      <td>17.069895</td>\n",
+       "      <td>0.016652</td>\n",
+       "      <td>7.975696</td>\n",
+       "      <td>0.718094</td>\n",
+       "      <td>0.916197</td>\n",
+       "      <td>1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "    ptTrack  etaTrack  phiTrack  track_quality          PIDe      PIDk  PIDmu  \\\n",
+       "1  2.177951  2.121020  6.122622       1.096576  7.339656e-05  0.000198   -999   \n",
+       "2  1.416451  3.147866  2.778954       1.169991  3.348872e-04  0.054081   -999   \n",
+       "3  1.039049  1.992837  3.910394       0.643400  1.908508e-07  0.000090   -999   \n",
+       "4  0.737614  3.077182  4.055139       1.252629  1.325996e-03  0.634082   -999   \n",
+       "\n",
+       "      PIDpi      PIDp  PIDghost         IP     IPerr    vertexIP      EOverP  \\\n",
+       "1  0.985658  0.001393  0.001943   0.103917  0.020943  520.172180 -999.000000   \n",
+       "2  0.568771  0.188799  0.011440   0.032704  0.023889  255.362961    0.698145   \n",
+       "3  0.996812  0.000584  0.001059   0.018182  0.023879  324.237823 -999.000000   \n",
+       "4  0.035756  0.304926  0.006668  17.069895  0.016652    7.975696    0.718094   \n",
+       "\n",
+       "        Edx  chargeTrack       ptB      etaB      phiB  ID  \n",
+       "1  0.832958           -1  2.064923  4.255869  4.096291   0  \n",
+       "2  0.869784            1  2.064923  4.255869  4.096291   0  \n",
+       "3  0.904225           -1  2.064923  4.255869  4.096291   0  \n",
+       "4  0.916197            1  2.064923  4.255869  4.096291   0  "
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# print joined_data.shape\n",
+    "print dataTrack.shape\n",
+    "# print kaggle_joined_data.shape\n",
+    "# print kaggle_dataTrack.shape\n",
+    "# # kaggle_joined_data.head()\n",
+    "joined_data[1:5]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# do cross-validation: divide indices of collisions\n",
+    "# trainID, testID = train_test_split(joined_data.ID, random_state=42, train_size=0.5)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "ids_of_tracks_with_max_pt = take_max_pt_tracks_ids(joined_data.ptTrack.values, joined_data.ID.values) \n",
+    "joined_data = joined_data.ix[ids_of_tracks_with_max_pt, :]\n",
+    "# reindex for later usage\n",
+    "# joined_data.index = numpy.arange(len(data_max_pt))\n",
+    "# apply to kaggle test samples also\n",
+    "kaggle_ids_of_tracks_with_max_pt = take_max_pt_tracks_ids(kaggle_joined_data.ptTrack.values, kaggle_joined_data.ID.values)\n",
+    "kaggle_joined_data = kaggle_joined_data.ix[kaggle_ids_of_tracks_with_max_pt, :]\n",
+    "# data_max_pt\n",
+    "# kaggle_data_max_pt.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# take training collision ids\n",
+    "trainID, testID = train_test_split(joined_data.ID, random_state=42, train_size=0.5)\n",
+    "train_track = joined_data.iloc[numpy.in1d(joined_data.ID, trainID), :].drop('ID', axis=1)\n",
+    "train_target = dataB.iloc[numpy.in1d(dataB.ID, trainID), :]['chargeB'].values\n",
+    "# take test collision ids\n",
+    "test_track = joined_data.iloc[numpy.in1d(joined_data.ID, testID), :].drop('ID', axis=1)\n",
+    "test_target = dataB.iloc[numpy.in1d(dataB.ID, testID), :]['chargeB'].values\n",
+    "\n",
+    "# add the cosine data:\n",
+    "train_track.columns\n",
+    "train_track['cosines']=numpy.cos(train_track['phiB']-train_track['phiTrack'])\n",
+    "train_track['absEtas']=numpy.abs(train_track['etaB']-train_track['etaTrack'])\n",
+    "test_track['cosines']=numpy.cos(test_track['phiB']-test_track['phiTrack'])\n",
+    "test_track['absEtas']=numpy.abs(test_track['etaB']-test_track['etaTrack'])\n",
+    "\n",
+    "kaggle_joined_data['cosines']=numpy.cos(kaggle_joined_data['phiB']-kaggle_joined_data['phiTrack'])\n",
+    "kaggle_joined_data['absEtas']=numpy.abs(kaggle_joined_data['etaB']-kaggle_joined_data['etaTrack'])\n",
+    "kaggle_joined_data=kaggle_joined_data.drop('ID', axis=1)\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# # mixing parameters:\n",
+    "# EfeaturesTrain=pd.DataFrame()\n",
+    "# EfeaturesTest=pd.DataFrame()\n",
+    "# Efeatureskaggle=pd.DataFrame()\n",
+    "# for i in train_track.columns:\n",
+    "#     for j in train_track.columns:\n",
+    "#         name=i+j\n",
+    "#         EfeaturesTrain[name]=train_track[i]*train_track[j]\n",
+    "#         EfeaturesTest[name]=test_track[i]*test_track[j]\n",
+    "#         Efeatureskaggle[name]=kaggle_data_max_pt[i]*kaggle_data_max_pt[j]\n",
+    "#         print name\n",
+    "# EfeaturesTrain.shape\n",
+    "# train_track.shape\n",
+    "# Traindf=pd.concat([train_track, EfeaturesTrain], axis=1)\n",
+    "# Testdf=pd.concat([test_track, EfeaturesTest], axis=1)\n",
+    "# kaggledf=pd.concat([kaggle_data_max_pt, Efeatureskaggle], axis=1)\n",
+    "# kaggledf.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "\n",
+    "# train_track[0:20]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ptTrack</th>\n",
+       "      <th>etaTrack</th>\n",
+       "      <th>phiTrack</th>\n",
+       "      <th>track_quality</th>\n",
+       "      <th>PIDe</th>\n",
+       "      <th>PIDk</th>\n",
+       "      <th>PIDmu</th>\n",
+       "      <th>PIDpi</th>\n",
+       "      <th>PIDp</th>\n",
+       "      <th>PIDghost</th>\n",
+       "      <th>...</th>\n",
+       "      <th>IPerr</th>\n",
+       "      <th>vertexIP</th>\n",
+       "      <th>EOverP</th>\n",
+       "      <th>Edx</th>\n",
+       "      <th>chargeTrack</th>\n",
+       "      <th>ptB</th>\n",
+       "      <th>etaB</th>\n",
+       "      <th>phiB</th>\n",
+       "      <th>cosines</th>\n",
+       "      <th>absEtas</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>2.389763</td>\n",
+       "      <td>4.624012</td>\n",
+       "      <td>2.363516</td>\n",
+       "      <td>1.465301</td>\n",
+       "      <td>0.001304</td>\n",
+       "      <td>0.310929</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.733414</td>\n",
+       "      <td>0.028445</td>\n",
+       "      <td>0.085380</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.034971</td>\n",
+       "      <td>14.107724</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.888746</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1.486229</td>\n",
+       "      <td>4.385767</td>\n",
+       "      <td>2.651603</td>\n",
+       "      <td>0.958789</td>\n",
+       "      <td>0.238245</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>10</th>\n",
+       "      <td>4.087478</td>\n",
+       "      <td>1.919304</td>\n",
+       "      <td>2.257784</td>\n",
+       "      <td>0.714591</td>\n",
+       "      <td>0.000164</td>\n",
+       "      <td>0.000024</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.994760</td>\n",
+       "      <td>0.000214</td>\n",
+       "      <td>0.001851</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.011770</td>\n",
+       "      <td>368.064606</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>1.028080</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>5.324822</td>\n",
+       "      <td>3.436363</td>\n",
+       "      <td>0.471933</td>\n",
+       "      <td>-0.213401</td>\n",
+       "      <td>1.517059</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>20</th>\n",
+       "      <td>1.644044</td>\n",
+       "      <td>2.431995</td>\n",
+       "      <td>3.512404</td>\n",
+       "      <td>0.341016</td>\n",
+       "      <td>0.000043</td>\n",
+       "      <td>0.703921</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.025259</td>\n",
+       "      <td>0.278162</td>\n",
+       "      <td>0.007875</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.020719</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.793783</td>\n",
+       "      <td>1</td>\n",
+       "      <td>3.525162</td>\n",
+       "      <td>2.792096</td>\n",
+       "      <td>4.223106</td>\n",
+       "      <td>0.757904</td>\n",
+       "      <td>0.360101</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>30</th>\n",
+       "      <td>1.071446</td>\n",
+       "      <td>4.516872</td>\n",
+       "      <td>5.170130</td>\n",
+       "      <td>0.632556</td>\n",
+       "      <td>0.026795</td>\n",
+       "      <td>0.006393</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.993989</td>\n",
+       "      <td>0.005401</td>\n",
+       "      <td>0.005222</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.041583</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.996044</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1.701933</td>\n",
+       "      <td>4.466896</td>\n",
+       "      <td>2.384616</td>\n",
+       "      <td>-0.937271</td>\n",
+       "      <td>0.049976</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>39</th>\n",
+       "      <td>2.138974</td>\n",
+       "      <td>4.031241</td>\n",
+       "      <td>4.267846</td>\n",
+       "      <td>0.982188</td>\n",
+       "      <td>0.000023</td>\n",
+       "      <td>0.017155</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.971904</td>\n",
+       "      <td>0.000354</td>\n",
+       "      <td>0.012117</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.026346</td>\n",
+       "      <td>43.356487</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.982512</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>13.408205</td>\n",
+       "      <td>4.015842</td>\n",
+       "      <td>0.653297</td>\n",
+       "      <td>-0.890225</td>\n",
+       "      <td>0.015399</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>5 rows × 21 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "     ptTrack  etaTrack  phiTrack  track_quality      PIDe      PIDk  PIDmu  \\\n",
+       "0   2.389763  4.624012  2.363516       1.465301  0.001304  0.310929   -999   \n",
+       "10  4.087478  1.919304  2.257784       0.714591  0.000164  0.000024   -999   \n",
+       "20  1.644044  2.431995  3.512404       0.341016  0.000043  0.703921   -999   \n",
+       "30  1.071446  4.516872  5.170130       0.632556  0.026795  0.006393   -999   \n",
+       "39  2.138974  4.031241  4.267846       0.982188  0.000023  0.017155   -999   \n",
+       "\n",
+       "       PIDpi      PIDp  PIDghost    ...        IPerr    vertexIP  EOverP  \\\n",
+       "0   0.733414  0.028445  0.085380    ...     0.034971   14.107724    -999   \n",
+       "10  0.994760  0.000214  0.001851    ...     0.011770  368.064606    -999   \n",
+       "20  0.025259  0.278162  0.007875    ...     0.020719 -999.000000    -999   \n",
+       "30  0.993989  0.005401  0.005222    ...     0.041583 -999.000000    -999   \n",
+       "39  0.971904  0.000354  0.012117    ...     0.026346   43.356487    -999   \n",
+       "\n",
+       "         Edx  chargeTrack        ptB      etaB      phiB   cosines   absEtas  \n",
+       "0   0.888746            1   1.486229  4.385767  2.651603  0.958789  0.238245  \n",
+       "10  1.028080           -1   5.324822  3.436363  0.471933 -0.213401  1.517059  \n",
+       "20  0.793783            1   3.525162  2.792096  4.223106  0.757904  0.360101  \n",
+       "30  0.996044            1   1.701933  4.466896  2.384616 -0.937271  0.049976  \n",
+       "39  0.982512           -1  13.408205  4.015842  0.653297 -0.890225  0.015399  \n",
+       "\n",
+       "[5 rows x 21 columns]"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# kaggle_data_max_pt.head()\n",
+    "kaggle_joined_data.head()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# improving Ridge regression parameters:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf5 = Ridge(alpha=0.1)\n",
+    "for alpha in [0.01,0.005]:\n",
+    "    clf5 = Ridge(random_state=42,alpha=alpha)\n",
+    "    clf5.fit(train_track, train_target)\n",
+    "    print  roc_auc_score(train_target, clf5.predict(train_track)),\n",
+    "    print 'test:', roc_auc_score(test_target, clf5.predict(test_track))\n",
+    "create_solution(clf5.predict(kaggle_data_max_pt))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# improving logistic regression parameters:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf4 = LogisticRegression(C=0.1)\n",
+    "for C in [0.01,0.005]:\n",
+    "    clf4 = LogisticRegression(random_state=42,C=C)\n",
+    "    clf4.fit(train_track, train_target)\n",
+    "    print  roc_auc_score(train_target, clf4.predict_proba(train_track)[:, 1]),\n",
+    "    print 'test:', roc_auc_score(test_target, clf4.predict_proba(test_track)[:, 1])\n",
+    "create_solution(clf4.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# improving random forest parameters:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Index([u'ptTrack', u'etaTrack', u'phiTrack', u'track_quality', u'PIDe',\n",
+       "       u'PIDk', u'PIDmu', u'PIDpi', u'PIDp', u'PIDghost', u'IP', u'IPerr',\n",
+       "       u'vertexIP', u'EOverP', u'Edx', u'chargeTrack', u'ptB', u'etaB',\n",
+       "       u'phiB', u'cosines', u'absEtas'],\n",
+       "      dtype='object')"
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "train_track.columns"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.580161238479 test: 0.57375171208 0.546976 0.5514\n",
+      "0.584725159874 test: 0.574559403342 0.547288 0.551232\n",
+      "0.613238451447 test: 0.57633354795 0.556672 0.550776\n",
+      "0.715179916892 test: 0.576464866833 0.635088 0.550776\n"
+     ]
+    }
+   ],
+   "source": [
+    "# improving random forest parameters:\n",
+    "for max_depth in [4,5,8,12]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=50, min_samples_leaf=1,max_leaf_nodes=None,\n",
+    "                              criterion='gini',max_depth=max_depth)\n",
+    "    clf1.fit(train_track, train_target)\n",
+    "    print  roc_auc_score(train_target, clf1.predict_proba(train_track)[:, 1]),\n",
+    "    print 'test:', roc_auc_score(test_target, clf1.predict_proba(test_track)[:, 1]),\n",
+    "    print sum(clf1.predict(train_track)*train_target>0*1.)/float(len(train_target)),\n",
+    "    print sum(clf1.predict(test_track)*test_target>0*1.)/float(len(test_target))\n",
+    "\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.928744 0.500536\n"
+     ]
+    }
+   ],
+   "source": [
+    "# sorted(zip(clf1.feature_importances_, train_track.columns))\n",
+    "print sum(clf1.predict(train_track)*train_target>0*1.)/float(len(train_target)),\n",
+    "print sum(clf1.predict(test_track)*train_target>0*1.)/float(len(test_target)),\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track['chargeTrack'].mean()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "dataB.head()\n",
+    "kaggle_dataB.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "dataB.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# print sum(1.*clf1.predict(train_track)*train_target)/len(train_target),\n",
+    "\n",
+    "# original=train_track.drop(['chargeB','ID'],axis=1)\n",
+    "original=train_track\n",
+    "target=kaggle_data_max_pt\n",
+    "# print original\n",
+    "# print target\n",
+    "plt.figure(figsize=[14, 70])\n",
+    "for i, column in enumerate(original.columns, start=1):\n",
+    "    plt.subplot(7, 3, i)\n",
+    "    plt.title(column)\n",
+    "    plt.hist(original[column], range=[0, 15], bins=40, alpha=0.5, label='original/MC')\n",
+    "    plt.hist(target[column],   range=[0, 15], bins=40, alpha=0.5, label='target/data')\n",
+    "    plt.legend(loc='best')\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "print len(train_target)\n",
+    "# print sum(1.*clf1.predict(train_track)*train_target)/len(train_target),\n",
+    "# print sum(1.*clf1.predict(test_track)*test_target)/len(test_target)\n",
+    "\n",
+    "df=pd.DataFrame({\"prediction\":clf1.predict(test_track)})\n",
+    "df['True']=test_target\n",
+    "df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(clf1.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.columns == kaggle_data_max_pt.columns"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.mean() / kaggle_data_max_pt.mean()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "kaggle_data_max_pt"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "-- All features; training over 0.8\n",
+    "clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=15, min_samples_leaf=10,max_leaf_nodes=100)\n",
+    "0.593431100328 test: 0.592875283872 (0.57418 kaggle)\n",
+    "\n",
+    "clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=15, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='entropy')\n",
+    " 0.592324694327 test: 0.591882995435\n",
+    "        \n",
+    "for n_estimators in [15,20,30,40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_features=5)\n",
+    "    clf1.fit(train_track, train_target)\n",
+    "   0.591919714747 test: 0.591294530235\n",
+    "0.592935744096 test: 0.592328341639\n",
+    "0.595333891158 test: 0.594645982716\n",
+    "0.596227659758 test: 0.595557600077\n",
+    "kaggle:0.57460\n",
+    "----------------------\n",
+    "for n_estimators in [15,20,30,40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "                              \n",
+    "   \n",
+    "0.593431100328 test: 0.592875283872\n",
+    "0.594023597111 test: 0.593493720285\n",
+    "0.595202959191 test: 0.594739974399\n",
+    "0.596633070053 test: 0.596192431842\n",
+    "kaggle: 0.57510\n",
+    "--------\n",
+    "for n_estimators in [50]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "0.597736985909 test: 0.597230318676\n",
+    "kaggle:0.57523\n",
+    "------\n",
+    "for n_estimators in [100]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "around 0.6\n",
+    "kaggle:0.57512\n",
+    "---------\n",
+    "\n",
+    "for n_estimators in [200]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "    clf1.fit(train_track, train_target)\n",
+    "\n",
+    "0.601892190046 test: 0.601301739753\n",
+    "kaggle:0.57546                   \n",
+    "------\n",
+    "for n_estimators in [40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "0.596633070053 test: 0.596192431842\n",
+    "kaggle:0.57510  \n",
+    "\n",
+    "------\n",
+    "non linear data:\n",
+    "for n_estimators in [80]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_depth=7)\n",
+    "    clf1.fit(Traindf, train_target)\n",
+    " \n",
+    " 0.590912098515 test: 0.588632715086\n",
+    "kaggle:0.57576 \n",
+    "\n",
+    "for n_estimators in [150]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_depth=8)\n",
+    "    clf1.fit(Traindf, train_target)\n",
+    "\n",
+    "0.592988342462 test: 0.590449508233\n",
+    "kaggle:0.57586"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf1 = RandomForestClassifier(random_state=42,n_estimators=150, min_samples_leaf=10,max_leaf_nodes=100)\n",
+    "clf2 = DecisionTreeClassifier(max_depth=6,min_samples_leaf=10)                                 \n",
+    "clf3 = GaussianNB()\n",
+    "clf4 = LogisticRegression(C=0.05)\n",
+    "clf5 = Ridge(alpha=0.01)\n",
+    "\n",
+    "names=['Random Forest', 'Decision Tree',  'Naive Bayes','Logistic regression','Ridge']\n",
+    "classifiers=[clf1, clf2, clf3,clf4,clf5]\n",
+    "names=names[:-1]\n",
+    "classifiers=classifiers[:-1]\n",
+    "# clf5 = KNeighborsClassifier(n_neighbors=10)\n",
+    "predictMatrix=pd.DataFrame()\n",
+    "predictProbMatrix=pd.DataFrame()\n",
+    "# sclf = StackingClassifier(cla ta_classifier=lr)\n",
+    "\n",
+    "for clf, label in zip(classifiers, \n",
+    "                      names):\n",
+    "    \n",
+    "    clf.fit(train_track, train_target)\n",
+    "    predictMatrix[label]=clf.predict(train_track)\n",
+    "    try:\n",
+    "        predictProbMatrix[label]=clf.predict_proba(train_track)[:, 1]\n",
+    "        print label, roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "        print roc_auc_score(test_target, clf.predict_proba(test_track)[:, 1]),\n",
+    "        print 'MSE:',(mean_squared_error(train_target, predictMatrix[label])),  \n",
+    "        print sum(predictMatrix[label]*train_target)\n",
+    "    except: \n",
+    "        pass\n",
+    " "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "predictMatrix\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "try:\n",
+    "    predictMatrix=predictMatrix.drop(['True','Combined'],axis=1)\n",
+    "except:\n",
+    "    pass\n",
+    "log_reg = LogisticRegression()\n",
+    "lin_reg = LinearRegression()\n",
+    "\n",
+    "\n",
+    "\n",
+    "X=numpy.array(predictMatrix)\n",
+    "lin_reg.fit(X, train_target)\n",
+    "# lin_reg.coef_=[max(0,i) for i in lin_reg.coef_]\n",
+    "print lin_reg.coef_\n",
+    "predictMatrix['Combined']=lin_reg.predict(X)\n",
+    "predictMatrix['Combined']=predictMatrix['Combined']>0*1\n",
+    "predictMatrix['Combined'][predictMatrix['Combined']==False]=-1\n",
+    "\n",
+    "predictMatrix['True']=train_target\n",
+    "predictMatrix[0:2]\n",
+    "\n",
+    "print 'MSE of xombined methods:',(mean_squared_error(train_target, predictMatrix['Combined']))\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# predictProbMatrix=predictProbMatrix.drop(['True','Combined'],axis=1)\n",
+    "print lin_reg.coef_\n",
+    "predictMatrix[0:3] \n",
+    "# np.dot(predictProbMatrix[0:3],lin_reg.coef_.T/4)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "gb_clf = GradientBoostingClassifier(n_estimators=80, learning_rate=0.4, max_depth=4)\n",
+    "new_trainY = train_target\n",
+    "new_testY = test_target\n",
+    "# fit the GB\n",
+    "gb_clf.fit(train_track, new_trainY)\n",
+    "\n",
+    "# compute qualtity, ROC AUC, after adding one more estimator into the ensemble\n",
+    "# use for this `staged_predict_proba` - iterator over predictions on each boosting iteration\n",
+    "test_qualities = []"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "for p in gb_clf.staged_predict_proba(test_track):\n",
+    "    test_qualities.append(roc_auc_score(new_testY, p[:, 1]))\n",
+    "plt.plot(test_qualities)\n",
+    "\n",
+    "predictMatrix['Ridge']=(predictMatrix['Ridge']>0)*2-1\n",
+    "create_solution(gb_clf.predict_proba(kaggle_data_max_pt)[:, 1])\n",
+    "\n",
+    "print label, roc_auc_score(test_target, clf1.predict_proba(test_track)[:, 1])\n",
+    "create_solution(clf1.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# predictMatrix=predictMatrix.drop(['True','Combined'],axis=1)\n",
+    "predictMatrix[10:100]\n",
+    "# predictProbMatrix[0:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# predictProbMatrix=predictProbMatrix.drop(['True','Combined'],axis=1)\n",
+    "log_reg = LogisticRegression()\n",
+    "X=numpy.array(predictProbMatrix)\n",
+    "log_reg.fit(X, train_target)\n",
+    "# lin_reg.coef_=[max(0,i) for i in lin_reg.coef_]\n",
+    "print log_reg.coef_\n",
+    "predictProbMatrix['Combined']=log_reg.predict(X)\n",
+    "predictProbMatrix['True']=train_target\n",
+    "predictProbMatrix[1:150]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "predictProbMatrix[0:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "print label, roc_auc_score(train_target, lin_reg.predict(train_track)),\n",
+    "print label, roc_auc_score(test_target, lin_reg.predict(test_track))\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# Decision tree:\n",
+    "test_track0, test_track2, test_target0,test_target2 = train_test_split(test_track,test_target, random_state=42, train_size=0.60)\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "\n",
+    "max_depth_V=[10]\n",
+    "# max_depth_V=[6]\n",
+    "min_samples_leaf_V=[10]\n",
+    "# min_samples_leaf_V=[10]\n",
+    "roc_auc_Test=[]\n",
+    "roc_auc_Test2=[]\n",
+    "for max_depth in max_depth_V:\n",
+    "    for min_samples_leaf in min_samples_leaf_V:\n",
+    "        DTC=DecisionTreeClassifier(max_depth=max_depth,min_samples_leaf=min_samples_leaf,\n",
+    "                                   max_leaf_nodes=40,class_weight=\"balanced\")\n",
+    "        DTC.fit(train_track, train_target)\n",
+    "        roc_auc_Test.append(roc_auc_score(test_target0, DTC.predict_proba(test_track0)[:, 1]))\n",
+    "        roc_auc_Test2.append(roc_auc_score(test_target2, DTC.predict_proba(test_track2)[:, 1]))\n",
+    "\n",
+    "        print 'max depth',max_depth,'train:',\n",
+    "        \n",
+    "        print 'min_samples_leaf',min_samples_leaf,\n",
+    "        print roc_auc_score(train_target, DTC.predict_proba(train_track)[:, 1]),\n",
+    "        print 'test:',roc_auc_Test[-1],\n",
+    "        print 'test2:',roc_auc_Test2[-1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(DTC.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.ensemble import RandomForestClassifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "n_estimators=[2]\n",
+    "max_leaf_nodesV=[3]\n",
+    "\n",
+    "param_grid = [\n",
+    "  {'n_estimators': [50],'max_leaf_nodes':[5,10,30,100],'min_samples_leaf':[10] }\n",
+    " ]\n",
+    "\n",
+    "classf = RandomForestClassifier()\n",
+    "clf = GridSearchCV(classf, param_grid)\n",
+    "clf.fit(train_track, train_target)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "sorted(clf.grid_scores_)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# for n_s in n_estimators:\n",
+    "#     for mln in max_leaf_nodesV:\n",
+    "#         clf = RandomForestClassifier(n_estimators=n_s, min_samples_leaf=10,max_leaf_nodes=mln,\n",
+    "#                                     random_state=42)\n",
+    "#         clf.fit(train_track, train_target,)\n",
+    "\n",
+    "#         print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "#         print roc_auc_score(test_target, clf.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "mln=50\n",
+    "n_s=100\n",
+    "clf = RandomForestClassifier(n_estimators=n_s, min_samples_leaf=10,max_leaf_nodes=mln,random_state=42)\n",
+    "clf.fit(train_track, train_target)\n",
+    "\n",
+    "print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "print roc_auc_score(test_target0, clf.predict_proba(test_track0)[:, 1]),\n",
+    "print roc_auc_score(test_target2, clf.predict_proba(test_track2)[:, 1]),"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(clf.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf.feature_importances_\n",
+    "df=pandas.DataFrame({'Features':test_track.columns,'Importance':clf.feature_importances_\n",
+    "})\n",
+    "df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.ensemble import GradientBoostingClassifier \n",
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "n_estimators=[20]\n",
+    "max_leaf_nodesV=[10,40,]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "for n_s in n_estimators:\n",
+    "    for mln in max_leaf_nodesV:\n",
+    "        gbc = GradientBoostingClassifier(n_estimators=n_s, min_samples_leaf=3,max_leaf_nodes=mln,\n",
+    "                                    random_state=42,learning_rate=0.15)\n",
+    "        gbc.fit(train_track, train_target)\n",
+    "\n",
+    "        print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, grdb.predict_proba(train_track)[:, 1]),\n",
+    "        print roc_auc_score(test_target, gbc.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "GradientBoostingClassifier\n",
+    "create_solution(grdb.predict_proba(kaggle_data_max_pt.drop('ID', axis=1))[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.linear_model import Ridge\n",
+    "print Ridge()\n",
+    "for alpha in [0.,0.00001, 0.001, 0.01, 0.1, 1, 10, 100]:\n",
+    "    linear_reg = Ridge(alpha,tol=0.0001)\n",
+    "    linear_reg.fit(train_track, train_target)\n",
+    "#     print roc_auc_score(test_target, linear_reg.predict(test_track))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Compute features:  $\\cos(\\phi_B - \\phi_\\text{track})$ and $| \\eta_B - \\eta_\\text{track} "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.columns\n",
+    "train_track['cosines']=numpy.cos(train_track['phiB']-train_track['phiTrack'])\n",
+    "train_track['absEtas']=numpy.abs(train_track['etaB']-train_track['etaTrack'])\n",
+    "test_track['cosines']=numpy.cos(test_track['phiB']-test_track['phiTrack'])\n",
+    "test_track['absEtas']=numpy.abs(test_track['etaB']-test_track['etaTrack'])\n",
+    "\n",
+    "kaggle_data_max_pt['cosines']=numpy.cos(kaggle_data_max_pt['phiB']-kaggle_data_max_pt['phiTrack'])\n",
+    "kaggle_data_max_pt['absEtas']=numpy.abs(kaggle_data_max_pt['etaB']-kaggle_data_max_pt['etaTrack'])\n",
+    "\n",
+    "# train_track.head()\n",
+    "# test_track.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.linear_model import Ridge\n",
+    "print Ridge()\n",
+    "for alpha in [0.,0.00001, 0.001, 0.01, 0.1, 1, 10, 100]:\n",
+    "    linear_reg = Ridge(alpha,tol=0.0001)\n",
+    "    linear_reg.fit(train_track, train_target)\n",
+    "#     print roc_auc_score(test_target, linear_reg.predict(test_track))\n",
+    "    \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "learning_rate=0.1\n",
+    "print learning_rate\n",
+    "n_estimators=[10]\n",
+    "max_leaf_nodesV=[10,20]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "for n_s in n_estimators:\n",
+    "    for mln in max_leaf_nodesV:\n",
+    "        gbc = GradientBoostingClassifier(n_estimators=n_s, min_samples_leaf=5,max_leaf_nodes=mln,\n",
+    "                                    random_state=42,learning_rate=learning_rate)\n",
+    "        gbc.fit(train_track, train_target)\n",
+    "\n",
+    "        print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, GBC.predict_proba(train_track)[:, 1]),\n",
+    "        print roc_auc_score(test_target, gbc.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(gbc.predict_proba(kaggle_data_max_pt.drop('ID', axis=1))[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "GBC.feature_importances_\n",
+    "df=pandas.DataFrame({'Features':test_track.columns,'Importance':GBC.feature_importances_\n",
+    "})\n",
+    "\n",
+    "df\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Major Goal. ** Participate in Flavour Tagging kaggle! Don't forget about feature engineering (some hints may appear in the chat). It is recommended first reading about the available features."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "0.15\n",
+    "n_s: 10 mln: 10 tra/test: 0.576105927237 0.580282330033"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# References\n",
+    "\n",
+    "- [Introduction to boosted trees](https://xgboost.readthedocs.io/en/latest/model.html)\n",
+    "- Sklearn's [tutorial](http://nbviewer.jupyter.org/urls/s3.amazonaws.com/datarobotblog/notebooks/gbm-tutorial.ipynb) on tuning GBDT."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 2",
+   "language": "python",
+   "name": "python2"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 2
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython2",
+   "version": "2.7.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}
