@@ -1,0 +1,1328 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Hi sklearn!\n",
+    "\n",
+    "Diving into machine learning."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## First challenge is [restaurants reviews](https://inclass.kaggle.com/c/restaurant-reviews) \n",
+    "The goal of this competition is to learn predicting whether restaurant review is positive or negative.  \n",
+    "\n",
+    "### Reading restaurant  collection\n",
+    "\n",
+    "each line is a grade and text of review separated by tab."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "4\tThank you thank you thank you !! I  want to thank the people that made this place happen ....you have made all my dreams come true. Imagine a delicious yogurt shop with super fun flavors like peanut butter, chocolate mint, cake batter and so many more.  I used to have to travel to  Yogurtland or Jujuberry  but not anymore , now we have one right in the hood!! Guess what?   instead of eating a normal lunch I can pig out with a healthy peanut butter yogurt smothered in chocolate chips.   Could be the perfect lunch!!  See you there!\r\n",
+      "5\tA Humane Society store at the Biltmore?  Interesting.  I had seen an adorable chihuahua mix at the Humane Society's webpage, and headed over to check out the little dog and the store.  They sell a variety of toys, treats, leashes, collars, and foods- in short, they sell a little bit of everything.  There's no tax, and if you adopt a pet from them they will give you 10% off the price as a thank you.  When I went there were 4 dogs up for adoption, a rabbit, and a wall of cats.  The little chihuahua mix was hanging out in the store with another little dog, so we got to play with them for a little bit.  The staff were friendly, and weren't pushy or hovering.  \\n\\nIn the end, we did end up adopting that little chihuahua mix from here.  He's the sweetest little dog ever.  Thank you Petique!\r\n",
+      "1\tDon't buy Nike sneakers if you want to return or exchange them.. I've bought many from them. I went this week  and bought 2 pairs of Nike SB's that were already over retail price as it is.. I tried on one side then bought them... When I got home I realized that one of the shoes were damaged.. It's only been 2 days and they said they can't take it back.. I've bought many shoes there and this will be the last time... I'm from Nor Cal and people are crazy about sneakers out there and all the shops will accept a return or exchanged within 14- 30 days.. This was the first place that does not do that.. Why? Because sneakers and SB's are not big in AZ... They don't sell here.. I wouldn't buy them there if I were you.\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!head -n 3 ./data/1-restaurant-train.csv"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "import codecs\n",
+    "# python kung fu.\n",
+    "with codecs.open('./data/1-restaurant-train.csv') as f:\n",
+    "    labels, reviews = zip(*[line.split('\\t') for line in f.readlines()])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "('4', '5', '1', '3', '5', '4', '5', '3', '5', '5')"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "labels[:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "('Thank you thank you thank you !! I  want to thank the people that made this place happen ....you have made all my dreams come true. Imagine a delicious yogurt shop with super fun flavors like peanut butter, chocolate mint, cake batter and so many more.  I used to have to travel to  Yogurtland or Jujuberry  but not anymore , now we have one right in the hood!! Guess what?   instead of eating a normal lunch I can pig out with a healthy peanut butter yogurt smothered in chocolate chips.   Could be the perfect lunch!!  See you there!\\n',\n",
+       " \"A Humane Society store at the Biltmore?  Interesting.  I had seen an adorable chihuahua mix at the Humane Society's webpage, and headed over to check out the little dog and the store.  They sell a variety of toys, treats, leashes, collars, and foods- in short, they sell a little bit of everything.  There's no tax, and if you adopt a pet from them they will give you 10% off the price as a thank you.  When I went there were 4 dogs up for adoption, a rabbit, and a wall of cats.  The little chihuahua mix was hanging out in the store with another little dog, so we got to play with them for a little bit.  The staff were friendly, and weren't pushy or hovering.  \\\\n\\\\nIn the end, we did end up adopting that little chihuahua mix from here.  He's the sweetest little dog ever.  Thank you Petique!\\n\")"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "reviews[:2]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### read test dataset"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "with codecs.open('./data/1-restaurant-test.csv') as f:\n",
+    "    kaggle_test_reviews = f.readlines()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[\"My son just loves this place.  Weird that he'd ask to come here everytime we go grocery shopping (bribe) and not even care to go to Toys R Us.  Not complaining.   I'm not into little knick knacks, but they have quite a selection on little travel toys, educational materials for kids and holiday stuff.  I bought a couple of red bows with brass jingles on it and wreaths to put on my porch lights for $4!   Why is it that it's so cheap, but you can end up spending $50?\\n\",\n",
+       " '\"We gave it a 9, so we will make that 5-, 4,5 stars. \\\\n   To start with it\\'s just beautiful and we lucked out to be outside, under the heater next to the roaring fireplace. The service could not have been better and thanks to our YELPing friends, we hardly needed a menu. \\\\n  The Portugese clam soup was \\\\souper\\\\\"\" though on the salty side. The pork belly was \\\\\"\"off the hook\\\\\"\" and the steak tacos were tops too! We gave the dishes, 9, 9.5 and 9.5 respectivley.\\\\n  Margaritas were awesome, Smokehouse and Pomogranite but it was a short glass.    \\\\n  It\\'s been a long time since we had a solid 9. Thanks guys! Oh and the table guac is a must. PS if you get he bread pudding, get the sauce on the side. It\\'s over the top sweet. My pancreas is running laps right now!\"\"\"\\n']"
+      ]
+     },
+     "execution_count": 6,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "kaggle_test_reviews[:2]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### prepare solution\n",
+    "\n",
+    "define useful supplementary function"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "import numpy"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "import pandas\n",
+    "from IPython.display import FileLink\n",
+    "\n",
+    "def create_solution(predictions, filename='1-restaurant-predictions.csv'):\n",
+    "    result = pandas.DataFrame({'Id': numpy.arange(len(predictions)), 'Solution': predictions})\n",
+    "    result.to_csv('data/{}'.format(filename), index=False)\n",
+    "    return FileLink('data/{}'.format(filename))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Compute simple statistics in the reviews"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def compute_data_expressions(reviews):\n",
+    "    features = []\n",
+    "    # length of each string\n",
+    "    features.append(map(len, reviews))\n",
+    "    # number of letters, digits, spaces = words\n",
+    "    for pattern in [str.isalpha, str.isdigit, str.isspace]:\n",
+    "        features.append(map(lambda review: sum(map(pattern, review)), reviews))\n",
+    "        \n",
+    "    features = numpy.array(features).T\n",
+    "    return features\n",
+    "\n",
+    "features = compute_data_expressions(reviews)\n",
+    "kaggle_test_features = compute_data_expressions(kaggle_test_reviews)\n",
+    "\n",
+    "# convert labels to int values\n",
+    "labels = map(int, labels)\n",
+    "\n",
+    "# Making problem simpler: convert to positive/negative reviews. \n",
+    "answers = numpy.array(labels) >= 4"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([ True,  True, False, ...,  True, False,  True], dtype=bool)"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "\n",
+    "answers"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 536,  411,    0,  107],\n",
+       "       [ 796,  603,    3,  159],\n",
+       "       [ 720,  534,    6,  143],\n",
+       "       ..., \n",
+       "       [1092,  835,    9,  214],\n",
+       "       [ 574,  437,    2,  116],\n",
+       "       [ 637,  488,    4,  105]])"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "features"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Classification quality measure — ROC curve and area under the curve (AUC)\n",
+    "[Explanation of the ROC curve](http://arogozhnikov.github.io/RocCurve.html)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# area under the roc curve\n",
+    "from sklearn.metrics import roc_auc_score"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Simple solution"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.70796229643027875"
+      ]
+     },
+     "execution_count": 13,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from sklearn.neighbors import KNeighborsClassifier\n",
+    "\n",
+    "knn_clf = KNeighborsClassifier(n_neighbors=10)\n",
+    "knn_clf.fit(features, answers) # train an algorithm\n",
+    "roc_auc_score(answers, knn_clf.predict_proba(features)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<a href='data/1-restaurant-predictions.csv' target='_blank'>data/1-restaurant-predictions.csv</a><br>"
+      ],
+      "text/plain": [
+       "/notebooks/data/1-restaurant-predictions.csv"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "create_solution(knn_clf.predict_proba(kaggle_test_features)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Send it to kaggle and check that its score differs from the above value _significantly_."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Cross validation / overfitting"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.cross_validation import train_test_split\n",
+    "trainX, testX, trainY, testY = train_test_split(features, answers, random_state=42)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Kaggle challenges \n",
+    "\n",
+    "You'll participate in challenges, where your model performance will be assessed by kaggle using the predictions on the unlabeled data.\n",
+    "\n",
+    "It is an important practice, first challenge is [here](https://inclass.kaggle.com/c/restaurant-reviews). \n",
+    "\n",
+    "First kaggle is due to 30 Jan."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Knn"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "n_neighbors= 2 test 0.523998599836 ; train 0.890901082175\n",
+      "n_neighbors= 4 test 0.53293147584 ; train 0.794892581468\n",
+      "n_neighbors= 6 test 0.537100505083 ; train 0.751659188516\n",
+      "n_neighbors= 8 test 0.541474487911 ; train 0.725805494938\n",
+      "n_neighbors= 10 test 0.545258877175 ; train 0.706114764811\n"
+     ]
+    }
+   ],
+   "source": [
+    "import matplotlib.pyplot as plt\n",
+    "%matplotlib inline \n",
+    "\n",
+    "trainV=[]\n",
+    "testV=[]\n",
+    "n=range (2,11,2)\n",
+    "for i in n:\n",
+    "    knn_clf = KNeighborsClassifier(n_neighbors=i)\n",
+    "    knn_clf.fit(trainX, trainY)\n",
+    "#    print 'n_neighbors=',i, '.  test:', roc_auc_score(testY, knn_clf.predict_proba(testX)[:, 1]), 'train:', roc_auc_score(trainY, knn_clf.predict_proba(trainX)[:, 1])\n",
+    "    \n",
+    "\n",
+    "    testV.append(roc_auc_score(testY, knn_clf.predict_proba(testX)[:, 1]))\n",
+    "    trainV.append(roc_auc_score(trainY, knn_clf.predict_proba(trainX)[:, 1]))\n",
+    "\n",
+    "\n",
+    "    print 'n_neighbors=',i, 'test', testV[-1], '; train', trainV[-1]\n",
+    "\n",
+    "# print(trainV)\n",
+    "# print(n)\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAYwAAAEPCAYAAABRHfM8AAAABHNCSVQICAgIfAhkiAAAAAlwSFlz\nAAALEgAACxIB0t1+/AAAIABJREFUeJzt3Xl8VNX9//HXJyGAEJawI7K4KygqKqLo1wguaLVau4jV\naje1Wlttf21F+7Wi/drWb1tbv7WtWKlL3Vq3utQFqkaroiAii6w1gKxSRCAgsiSf3x/3TjKEmeTO\nkJuZSd7Px2MeM/fOPXc+CeR+5pxzzznm7oiIiDSmKNcBiIhIYVDCEBGRSJQwREQkEiUMERGJRAlD\nREQiUcIQEZFIYk8YZjbGzOab2UIzuybF+13N7HEzm2lmb5rZ4KhlRUSk+Vic4zDMrAhYCIwGVgLT\ngLHuPj/pmP8Fqtz9p2Z2IPB7dz85SlkREWk+cdcwhgOL3H2pu28HHgbOrnfMYOAlAHdfAAwys54R\ny4qISDOJO2H0A5YlbS8P9yWbCZwLYGbDgQHAXhHLiohIM8mHTu9fAGVm9g7wbWAGUJ3bkEREpL42\nMZ9/BUGNIWGvcF8td68Cvp7YNrPFQCXQobGySWU0IZaISIbc3TI5Pu4axjRgPzMbaGZtgbHAU8kH\nmFkXMysJX18CvOLum6KUTebuef244YYbch6D4lScilNxJh7ZiLWG4e7VZnYlMIkgOU1093lmdlnw\ntt8JHAzca2Y1wHvANxoqG2e8IiKSXtxNUrj788CB9fZNSHr9Zv33GyorIiK5kQ+d3k0iyxpWsykv\nL891CJEozqalOJuW4sytWAfuNRcz83POcW6/HfrpxlsRkUaZGZ5nnd7NZuhQOPxwuOMOqKnJdTQi\nLcegQYMwMz0K9DFo0KAm+7/QYmoY7s6cOXDJJdCmDfzpT3DQQbmOTKTwhd9Ecx2GZCndv1+rrmEA\nHHIIvPYanHceHH88/M//wLZtuY5KRKRlaFEJA6C4GK68Et55B6ZMgSOPhLfeynVUIiKFr8UljIQB\nA+CZZ+DHP4ZzzoGrroJNm3IdlYhI4WqxCQPADMaOhTlzYMOGoMnquedyHZWI5JPLL7+cm2++ucmP\nbYlaVKd3YyZPhssug2OPhd/+Fnr2bIbgRApcPnd677333kycOJFRo0blOpScuPfee7nrrrv417/+\nlfYYdXpn6ZRTYPZs2HPPoLbxl7/k/4A/EcledXXLnvja3THL6Jq/W1pVwgDo2BF++Ut49lm49VY4\n7TRYvDjXUYlIpi666CI++OADzjrrLDp37syvfvUrli5dSlFREX/+858ZOHAgo0ePBuBLX/oSffv2\npaysjPLycubOnVt7nq997Wv85Cc/AeCVV16hf//+3HrrrfTu3Zt+/fpxzz33ZHXsunXrOOuss+jS\npQvHHHMM119/PSeccELKn2Xr1q185StfoUePHpSVlXHMMcfwn//8B4CNGzfyzW9+kz333JP+/ftz\n/fXX4+7Mnz+fyy+/nClTptCpUye6devWlL/elFpdwkg48kiYOhVGj4ajjw6Sx44duY5KRKK67777\nGDBgAM888wwbN27kBz/4Qe17r776KvPnz+eFF14A4IwzzuD9999nzZo1DBs2jAsuuCDteVevXk1V\nVRUrV67krrvu4tvf/jYbNmzI+NgrrriCTp06sWbNGu655x7uvffetLWBe++9l40bN7JixQrWrVvH\nHXfcwR577AHAxRdfTNu2bamsrGTGjBlMnjyZu+66i4MOOog77riDY489lqqqKtatW5fV7zETrTZh\nAJSUwDXXwJtvBndUHXsszJyZ66hECotZ0zyyVb993sy48cYb2WOPPWjXrh0AX/3qV+nQoQMlJSX8\n5Cc/YebMmVRVVaU8X9u2bbn++uspLi7m9NNPp7S0lAULFmR0bE1NDY8//jg33XQT7dq14+CDD+bi\niy9O+zOUlJTw0UcfsXDhQsyMI444gtLSUtasWcNzzz3Hb37zG9q3b0+PHj24+uqreeihh7L8be2e\n2GerLQT77Qcvvgh33x30c3zzm3D99RAmeBFpQD72A+611161r2tqarjuuut49NFHWbt2be2UGWvX\nrqVTp067lO3evTtFRXXfpTt06MCmNPfkpzv2P//5D9XV1TvF0b9//7TxXnTRRSxfvpyxY8eyYcMG\nLrzwQm6++WaWLl3K9u3b6du3L1C37s+AAQPSnitOrbqGkcwMvv51mDUL/v1vOOwwqKjIdVQi0pB0\nTTzJ+x988EGefvppXnrpJdavX8+SJUt2axGhKHr27EmbNm1Yvnx57b5ly5alPb64uJjrr7+e9957\njzfeeIOnn36a++67j/79+9O+fXs++ugj1q1bx8cff8z69euZNWvWLj9nc1DCqKdPH/jb34KO8a98\nJZib6uOPcx2ViKTSp08fKisrd9pXPxFUVVXRrl07ysrK2Lx5M9dee23sF9qioiLOPfdcxo8fz5Yt\n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\n",
+      "text/plain": [
+       "<matplotlib.figure.Figure at 0x7f627c49c7d0>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "plt.plot(n,trainV, label='training set')\n",
+    "plt.plot(n,testV,label='test set')\n",
+    "\n",
+    "\n",
+    "plt.xlabel('n neighbours')\n",
+    "plt.ylabel('tarining/testing  succes')\n",
+    "plt.legend()\n",
+    "plt.show()\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "situation above is called 'overfitting'\n",
+    "\n",
+    "## Sidenote: sklearn interface"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[ 0.3,  0.7],\n",
+       "       [ 0.4,  0.6],\n",
+       "       [ 0.3,  0.7],\n",
+       "       ..., \n",
+       "       [ 0.8,  0.2],\n",
+       "       [ 0.6,  0.4],\n",
+       "       [ 0.4,  0.6]])"
+      ]
+     },
+     "execution_count": 25,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# work with scikit-learn models in simplest case consists of \n",
+    "# 0. split the data set to training and tesitng: \n",
+    "from sklearn.cross_validation import train_test_split\n",
+    "trainX, testX, trainY, testY = train_test_split(features, answers, random_state=42)\n",
+    "# 1. defining model with parameters\n",
+    "knn_clf = KNeighborsClassifier(n_neighbors=10)\n",
+    "# 2. training (method fit, X of shape [n_samples, n_features], target y of shape [n_samples])\n",
+    "knn_clf.fit(trainX, trainY)\n",
+    "# 3. predicting (predict probabilities for classification)\n",
+    "knn_clf.predict_proba(testX)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Finding optimal number of neighbours:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1 0.512878045192\n",
+      "2 0.523998599836\n",
+      "4 0.53293147584\n",
+      "8 0.541474487911\n",
+      "16 0.552905570616\n",
+      "32 0.56343027432\n",
+      "64 0.572396762402\n"
+     ]
+    }
+   ],
+   "source": [
+    "for n_neighbors in [1, 2, 4, 8, 16, 32, 64]:\n",
+    "    knn_clf = KNeighborsClassifier(n_neighbors=n_neighbors)\n",
+    "    knn_clf.fit(trainX, trainY)\n",
+    "    print n_neighbors, roc_auc_score(testY, knn_clf.predict_proba(testX)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## [Bag of words](https://en.wikipedia.org/wiki/Bag-of-words_model)\n",
+    "\n",
+    "Simplest way to represent the text is to count number of times each word is met"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.859897589657\n"
+     ]
+    }
+   ],
+   "source": [
+    "from sklearn.feature_extraction.text import CountVectorizer\n",
+    "from sklearn.naive_bayes import MultinomialNB\n",
+    "\n",
+    "\n",
+    "# take the 100 the most frequent words\n",
+    "maxF=2000\n",
+    "for max_features in [maxF]:\n",
+    "    vectorizer = CountVectorizer(max_features=max_features)\n",
+    "    vectorizer.fit(reviews)\n",
+    "    counts = vectorizer.transform(reviews).toarray()\n",
+    "    kaggle_test_counts = vectorizer.transform(kaggle_test_reviews).toarray()\n",
+    "    train_counts, test_counts, train_labels, test_labels = train_test_split(counts, answers, random_state=42)\n",
+    "    nb_clf = MultinomialNB()\n",
+    "    nb_clf.fit(train_counts, train_labels)\n",
+    "    print (roc_auc_score(test_labels, nb_clf.predict_proba(test_counts)[:, 1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(82065, 2000)"
+      ]
+     },
+     "execution_count": 30,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "counts.shape\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[0, 0, 0, ..., 0, 0, 0],\n",
+       "       [0, 1, 0, ..., 0, 0, 0],\n",
+       "       [0, 0, 0, ..., 0, 0, 0],\n",
+       "       ..., \n",
+       "       [2, 0, 0, ..., 0, 0, 0],\n",
+       "       [0, 0, 0, ..., 0, 0, 0],\n",
+       "       [0, 0, 0, ..., 0, 0, 0]])"
+      ]
+     },
+     "execution_count": 31,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "counts"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# vocabulary is a dictionary which keeps correspondence between columns and words\n",
+    "# vectorizer.vocabulary_"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_counts, test_counts, train_labels, test_labels = train_test_split(counts, answers, random_state=42)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Naive Bayes\n",
+    "\n",
+    "Naive Bayes will be explained later in the lectures. It is a generative model.\n",
+    "\n",
+    "Naive explanation: we compute for each word probability to appear in positive and negative review. To assess a new review, this information is combined."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Bernoulli\n",
+    "uses only information about presence of words in the text (count is zero or not) "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 40,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.82719875796629494"
+      ]
+     },
+     "execution_count": 40,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from sklearn.naive_bayes import BernoulliNB\n",
+    "nb_clf = BernoulliNB()\n",
+    "nb_clf.fit(train_counts, train_labels)\n",
+    "roc_auc_score(test_labels, nb_clf.predict_proba(test_counts)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### multinomial\n",
+    "\n",
+    "... also pays attention to counts"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.85989758965697505"
+      ]
+     },
+     "execution_count": 36,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from sklearn.naive_bayes import MultinomialNB\n",
+    "nb_clf = MultinomialNB()\n",
+    "nb_clf.fit(train_counts, train_labels)\n",
+    "roc_auc_score(test_labels, nb_clf.predict_proba(test_counts)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(61548, 1000)"
+      ]
+     },
+     "execution_count": 50,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "train_counts.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<a href='data/1-restaurant-predictions-nb.csv' target='_blank'>data/1-restaurant-predictions-nb.csv</a><br>"
+      ],
+      "text/plain": [
+       "/notebooks/data/1-restaurant-predictions-nb.csv"
+      ]
+     },
+     "execution_count": 35,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "create_solution(nb_clf.predict_proba(kaggle_test_counts)[:, 1], filename='1-restaurant-predictions-nb.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Linear regression + Ridge regularization\n",
+    "\n",
+    "Linear model is a very simple approximation:\n",
+    "$$\\hat{y_i}= \\theta_0 + \\sum_j \\theta_j x_i^j $$\n",
+    "where $x_i^j$ is a value for $j$-th feature for $i$-th sample, $\\theta_j$ — is a parameter to find for $j$-th feature, $\\hat{y_i}$ — prediction of linear model for $i$-th sample.\n",
+    "\n",
+    "And we can introduce the loss function (how our approximation is far from the true values). For example:\n",
+    "$$\\mathcal{L} = \\sum_i (y_i - \\hat{y}_i)^2 \\to \\min$$\n",
+    "(widely known as ordinary least squares)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.linear_model import Ridge"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 67,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(61548, 10)"
+      ]
+     },
+     "execution_count": 67,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "maxF=100\n",
+    "for max_features in [maxF]:\n",
+    "    vectorizer = CountVectorizer(max_features=max_features)\n",
+    "    vectorizer.fit(reviews)\n",
+    "    counts = vectorizer.transform(reviews).toarray()\n",
+    "    kaggle_test_counts = vectorizer.transform(kaggle_test_reviews).toarray()\n",
+    "    train_counts, test_counts, train_labels, test_labels = train_test_split(counts, answers, random_state=42)\n",
+    "    \n",
+    "    \n",
+    "train_counts.shape\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 68,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# print kaggle_test_counts.shape\n",
+    "# print train_labels.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 69,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "max features (words)= 10\n",
+      "trainset: 0.666463297035\n",
+      "testset: 0.667400605288\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<a href='data/1-restaurant-predictions-nb.csv' target='_blank'>data/1-restaurant-predictions-nb.csv</a><br>"
+      ],
+      "text/plain": [
+       "/notebooks/data/1-restaurant-predictions-nb.csv"
+      ]
+     },
+     "execution_count": 69,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "ridge_clf = Ridge()\n",
+    "ridge_clf.fit(train_counts, train_labels)\n",
+    "# use `predict` method for regression methods to evaluate function for new data\n",
+    "print 'max features (words)=',maxF\n",
+    "print 'trainset:', roc_auc_score(train_labels, ridge_clf.predict(train_counts))\n",
+    "print 'testset:', roc_auc_score(test_labels,  ridge_clf.predict(test_counts))\n",
+    "create_solution(ridge_clf.predict(kaggle_test_counts), filename='1-restaurant-predictions-nb.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Homework (due to 26 Jan, 9AM)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Exercise #0. (1 point)**. Play with regularization parameter of RidgeRegression, see how it affects quality on train and test.\n",
+    "Check quality of best model by submitting to kaggle.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 87,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(34194, 10)"
+      ]
+     },
+     "execution_count": 87,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# take the 30000 the most frequent words, and use 5000 samples in training\n",
+    "maxF=30000\n",
+    "vectorizer_reg = CountVectorizer(max_features=maxF)\n",
+    "vectorizer_reg.fit(reviews)\n",
+    "counts_reg = vectorizer_reg.transform(reviews)\n",
+    "counts_kaggle_reg = vectorizer_reg.transform(kaggle_test_reviews)\n",
+    "counts_kaggle_reg.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 99,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(34194, 30000)"
+      ]
+     },
+     "execution_count": 99,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "counts_kaggle_reg.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 108,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.910408144795\n"
+     ]
+    }
+   ],
+   "source": [
+    "train_counts_reg, test_counts_reg, train_labels_reg, test_labels_reg = \\\n",
+    "    train_test_split(counts_reg, answers, random_state=42, train_size=45000)\n",
+    "ridge_regularization = Ridge(alpha=100)\n",
+    "ridge_regularization.fit(train_counts_reg, train_labels_reg)\n",
+    "print roc_auc_score(test_labels_reg,  ridge_regularization.predict(test_counts_reg))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 109,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "alpha is: 100 predict rank: 0.910393678065\n",
+      "alpha is: 200 predict rank: 0.912992585193\n",
+      "alpha is: 300 predict rank: 0.91381972117\n",
+      "alpha is: 400 predict rank: 0.914034604964\n",
+      "alpha is: 500 predict rank: 0.913998373958\n",
+      "alpha is: 600 predict rank: 0.913810792967\n",
+      "alpha is: 800 predict rank: 0.913221961073\n"
+     ]
+    }
+   ],
+   "source": [
+    "# play with regularization here\n",
+    "prediction=[]\n",
+    "alphaRange=[0.1,1,10,100,200,300,400,500,600,1000,10000]\n",
+    "alphaRange=[100,200,300,400,500,600,800]\n",
+    "\n",
+    "\n",
+    "for alpha in alphaRange:\n",
+    "    ridge_regularization = Ridge(alpha)\n",
+    "    ridge_regularization.fit(train_counts_reg, train_labels_reg)\n",
+    "    prediction.append(roc_auc_score(test_labels_reg,  ridge_regularization.predict(test_counts_reg))\n",
+    "    )\n",
+    "    \n",
+    "    print 'alpha is:', alpha, 'predict rank:', roc_auc_score(test_labels_reg,  ridge_regularization.predict(test_counts_reg))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 110,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\nR0s4m5xM1MzMPqRVvjvbe8Ipnvhzk5OJmplZeb47223CaWziz2wy0fMpmkw0zzjNzKpJOb872+2w\naDMzqy7ttoVjZmbVxQnHzMwqwgnHzMwqwgnHzMwqwgnHzMwqwgnHzMwqwgnHzMwqwgnHrMIkLZW0\nfUvPMWtrnHDMKq+Up639RLa1O044ZmUk6b8kzZb0tKT/27A7O9ZD0gJJv5f0rKRbJW1ZcM43JT0h\naZ6kvbNrDpb0cLZ/pqRP5PCxzJrFCcesvL4eEQcDBwMXNHKbbB/g2ojoDbwBnFNw7O8R8SngeuCi\nbN8C4NBs/0jgJ2WN3qwVOeGYlde3JD0JzCJN6f4JPni77MWImJW9/z1waMGx/8p+PgE0rMDYFfij\npKeB/wR6lytws9bmhGNWJtnSu58HPh0RBwJPAltu/KoPJKN3sp/rWL867w+BaRHRBzi2hPLMqoYT\njln5dAFWRcQ7kvYFBmT7C9cZ6S7p09n704CHSiizYeGrr7dapGYV4IRjVj5TgS0kzQd+TFpjBD7Y\nilkEnCvpWdLtsusbOafQVcAoSU/g/3+tjfF6OGY5kdQDmJLdHjNr9/wXklm+/BefdRhu4ZiZWUW4\nhWNmZhXhhGNmZhXhhGNmZhXhhGNmZhXhhGNmZhXx/wHmRDsJxhDFCQAAAABJRU5ErkJggg==\n",
+      "text/plain": [
+       "<matplotlib.figure.Figure at 0x7f627760ad10>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "\n",
+    "plt.plot(alphaRange,prediction, label='')\n",
+    "plt.xlabel('alpha')\n",
+    "plt.ylabel('testset success')\n",
+    "plt.xscale('log')\n",
+    "# plt.legend()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 112,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(34194, 30000)"
+      ]
+     },
+     "execution_count": 112,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "kaggle_test_counts.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 107,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "alpha is: 400 predict rank: 0.915531207571\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<a href='data/1-restaurant-predictions-nb.csv' target='_blank'>data/1-restaurant-predictions-nb.csv</a><br>"
+      ],
+      "text/plain": [
+       "/notebooks/data/1-restaurant-predictions-nb.csv"
+      ]
+     },
+     "execution_count": 107,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# submit the 'best' result:\n",
+    "\n",
+    "alpha=400\n",
+    "ridge_regularization = Ridge(alpha)\n",
+    "ridge_regularization.fit(train_counts_reg, train_labels_reg)\n",
+    "print 'alpha is:', alpha, 'predict rank:', roc_auc_score(test_labels_reg,  ridge_regularization.predict(test_counts_reg))\n",
+    "create_solution(ridge_regularization.predict(counts_kaggle_reg), filename='1-restaurant-predictions-nb.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "**Exercise #1. (1 point)** Let's write the correspondence between columns and words (done below). Which words are most popular?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 126,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "The most Frequent word is: the\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Frequency</th>\n",
+       "      <th>Word</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>763597</td>\n",
+       "      <td>the</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>512455</td>\n",
+       "      <td>and</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>366593</td>\n",
+       "      <td>to</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>252141</td>\n",
+       "      <td>of</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>248869</td>\n",
+       "      <td>it</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>243854</td>\n",
+       "      <td>was</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>190157</td>\n",
+       "      <td>is</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>177257</td>\n",
+       "      <td>in</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>176522</td>\n",
+       "      <td>for</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9</th>\n",
+       "      <td>157229</td>\n",
+       "      <td>that</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   Frequency  Word\n",
+       "0     763597   the\n",
+       "1     512455   and\n",
+       "2     366593    to\n",
+       "3     252141    of\n",
+       "4     248869    it\n",
+       "5     243854   was\n",
+       "6     190157    is\n",
+       "7     177257    in\n",
+       "8     176522   for\n",
+       "9     157229  that"
+      ]
+     },
+     "execution_count": 126,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "dictionary = numpy.empty(len(vectorizer.vocabulary_), dtype='O')\n",
+    "for word, index in vectorizer.vocabulary_.iteritems():\n",
+    "    dictionary[index] = word\n",
+    "\n",
+    "\n",
+    "counts_tot=(sum(counts)) # sum over each words\n",
+    "#  remember:   counts = vectorizer.transform(reviews).toarray()\n",
+    "\n",
+    "counts_tot_sort=numpy.array(counts_tot).argsort()[::-1]\n",
+    "import pandas as pd\n",
+    "df=pd.DataFrame({'Word': dictionary[counts_tot_sort[:]],\n",
+    "                 'Frequency':counts_tot[counts_tot_sort[:]]})\n",
+    "\n",
+    "print 'The most Frequent word is:',df['Word'][0]\n",
+    "\n",
+    "df"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Exercise #2. (1 point) ** By analyzing coefficients in `ridge_clf.coef_`, determine which words have the highest impact on decision (= have the largest modulus of `coef_`)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Exercise #3. (2 points) **  Does combining features and counts improve quality? Use `numpy.hstack` to concatenate arrays.\n",
+    "Explain the result."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Exercise #4. (2 points)** Print examples on which your classifier makes mistakes (both false positive and false negative).\n",
+    "\n",
+    "This is important step to understand what can be done to improve the classifier"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Exercise #5. (optional, just for fun)**  Write a restaurant review, which is misunderstood by your best model. \n",
+    "Something like \"Hate each time I'm not eating here\".\n",
+    "\n",
+    "Use your knowledge about the structure of the model."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Major Goal in kaggle competition (not in this homework). ** Provide best classification model for the problem. \n",
+    "\n",
+    "You can start with computing new features:\n",
+    "1. Computing occurrences of symbols (like \"!\"; \":)\", etc.)\n",
+    "2. Ignoring the stop-words, words with digits, etc.\n",
+    "3. Adding more words in the model bag of words \n",
+    "4. words \"likes\", \"liked\", \"like\", \"likely\" all have \"like\" in it. You can use this information!\n",
+    "5. test your ideas\n",
+    "\n",
+    "Or start with changing parameters of classifiers. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Completed? \n",
+    "\n",
+    "\n",
+    "Rename the notebook to `1.2-Surname-sklearn.ipynb`, download (`File > Download as .ipynb`) and send to `icl.ml@yandex.ru`"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 2",
+   "language": "python",
+   "name": "python2"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 2
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython2",
+   "version": "2.7.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}

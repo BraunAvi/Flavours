@@ -1,0 +1,1196 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "\n",
+    "# Recall about decision trees"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {
+    "collapsed": false,
+    "slideshow": {
+     "slide_type": "skip"
+    }
+   },
+   "outputs": [],
+   "source": [
+    "%matplotlib inline\n",
+    "\n",
+    "# !pip install -U scikit-learn\n",
+    "# !pip install mlxtend\n",
+    "\n",
+    "import numpy\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import pandas\n",
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "from sklearn.cross_validation import train_test_split\n",
+    "from sklearn.metrics import mean_squared_error\n",
+    "from sklearn.metrics import roc_auc_score\n",
+    "from sklearn.grid_search import GridSearchCV\n",
+    "\n",
+    "from sklearn import model_selection\n",
+    "from sklearn.linear_model import LogisticRegression\n",
+    "from sklearn.neighbors import KNeighborsClassifier\n",
+    "from sklearn.naive_bayes import GaussianNB \n",
+    "from sklearn.ensemble import RandomForestClassifier\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "from sklearn.linear_model import Ridge\n",
+    "from sklearn.ensemble import BaggingClassifier\n",
+    "from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor\n",
+    "\n",
+    "\n",
+    "\n",
+    "from mlxtend.classifier import StackingClassifier\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Tracks preprocessing: \n",
+    "take only one track with the maximum transverse momentum as the most relevant track to define the flavour of B meson"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "def take_max_pt_tracks_ids(track_pts, ids):\n",
+    "    \"\"\"\n",
+    "    max is computing over tracks in the same collision for the same data\n",
+    "    \"\"\"\n",
+    "    # using trick from http://arogozhnikov.github.io/2015/09/30/NumpyTipsAndTricks2.html\n",
+    "    ids_unique, ids_enumerated = numpy.unique(ids, return_inverse=True)\n",
+    "\n",
+    "    track_sorter = numpy.argsort(track_pts)\n",
+    "    # order of track in pt\n",
+    "    track_ordered = numpy.argsort(track_sorter)\n",
+    "\n",
+    "    top_track = numpy.zeros(len(ids_unique), dtype=int)\n",
+    "    numpy.maximum.at(top_track, ids_enumerated, track_ordered)\n",
+    "    top_track = track_sorter[top_track]\n",
+    "    return top_track"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# define the function to create submission\n",
+    "from IPython.display import FileLink\n",
+    "def create_solution(predictions, filename='2-flavour-predictions.csv'):\n",
+    "    result = pandas.DataFrame({'ID': numpy.arange(len(predictions)), 'Prediction': predictions})\n",
+    "    result.to_csv('data/{}'.format(filename), index=False)\n",
+    "    return FileLink('data/{}'.format(filename))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# !wget -O ./data/trainingB.root https://www.dropbox.com/s/qu55m3xklxwyyht/trainingB.root?dl=0\n",
+    "# !wget -O ./data/trainingTrack.root https://www.dropbox.com/s/95s7nb7cnfmczw4/trainingTrack.root?dl=0\n",
+    "# !wget -O ./data/testB.root https://www.dropbox.com/s/hgjg369dmnkgxwa/testB.root?dl=0\n",
+    "# !wget -O ./data/testTrack.root https://www.dropbox.com/s/aekzjr4mo3g34ry/testTrack.root?dl=0"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# use root_numpy, pythonic wrapper over ROOT, to read data from the file\n",
+    "# convert read data into pandas\n",
+    "import root_numpy\n",
+    "# read dataset with B-meson description\n",
+    "dataB = pandas.DataFrame(root_numpy.root2array('./data/trainingB.root', treename='tree'))\n",
+    "# read dataset with all other tracks description in the collision\n",
+    "dataTrack = pandas.DataFrame(root_numpy.root2array('./data/trainingTrack.root', treename='tree'))\n",
+    "# dataB"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# read test samples with the same structure\n",
+    "kaggle_dataB = pandas.DataFrame(root_numpy.root2array('./data/testB.root', treename='tree'))\n",
+    "kaggle_dataTrack = pandas.DataFrame(root_numpy.root2array('./data/testTrack.root', treename='tree'))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# print dataB.shape\n",
+    "# dataB.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# print dataTrack.shape\n",
+    "# dataTrack.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# # plot number of tracks in each collision\n",
+    "# _, n_tracks = numpy.unique(dataTrack.ID, return_counts=True)\n",
+    "# plt.hist(n_tracks, bins=11, range=(0, 11))    \n",
+    "# plt.title('Number of tracks')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# Join dataTrack and B datasets:\n",
+    "joined_data = dataTrack.join(dataB, on='ID', lsuffix='_track', rsuffix='_B')\n",
+    "# create ID column\n",
+    "joined_data['ID'] = joined_data['ID_B']\n",
+    "# remove unnecessary IDs\n",
+    "joined_data = joined_data.drop(['ID_B', 'ID_track','chargeB'], axis=1)\n",
+    "\n",
+    "print joined_data.shape\n",
+    "print dataTrack.shape\n",
+    "joined_data.head()\n",
+    "# same for Kaggle DB:\n",
+    "kaggle_joined_data = kaggle_dataTrack.join(kaggle_dataB, on='ID', lsuffix='_track', rsuffix='_B')\n",
+    "# create ID column\n",
+    "kaggle_joined_data['ID'] = kaggle_joined_data['ID_B']\n",
+    "# remove unnecessary IDs\n",
+    "kaggle_joined_data = kaggle_joined_data.drop(['ID_B', 'ID_track'], axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "print joined_data.shape\n",
+    "print dataTrack.shape\n",
+    "print kaggle_joined_data.shape\n",
+    "print kaggle_dataTrack.shape\n",
+    "# kaggle_joined_data.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# do cross-validation: divide indices of collisions\n",
+    "trainID, testID = train_test_split(joined_data.ID, random_state=42, train_size=0.999)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "ids_of_tracks_with_max_pt = take_max_pt_tracks_ids(joined_data.ptTrack.values, joined_data.ID.values) \n",
+    "data_max_pt = joined_data.ix[ids_of_tracks_with_max_pt, :]\n",
+    "# reindex for later usage\n",
+    "data_max_pt.index = numpy.arange(len(data_max_pt))\n",
+    "# apply to kaggle test samples also\n",
+    "kaggle_ids_of_tracks_with_max_pt = take_max_pt_tracks_ids(kaggle_joined_data.ptTrack.values, kaggle_joined_data.ID.values)\n",
+    "kaggle_data_max_pt = kaggle_joined_data.ix[kaggle_ids_of_tracks_with_max_pt, :]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>ptTrack</th>\n",
+       "      <th>etaTrack</th>\n",
+       "      <th>phiTrack</th>\n",
+       "      <th>track_quality</th>\n",
+       "      <th>PIDe</th>\n",
+       "      <th>PIDk</th>\n",
+       "      <th>PIDmu</th>\n",
+       "      <th>PIDpi</th>\n",
+       "      <th>PIDp</th>\n",
+       "      <th>PIDghost</th>\n",
+       "      <th>IP</th>\n",
+       "      <th>IPerr</th>\n",
+       "      <th>vertexIP</th>\n",
+       "      <th>EOverP</th>\n",
+       "      <th>Edx</th>\n",
+       "      <th>chargeTrack</th>\n",
+       "      <th>ptB</th>\n",
+       "      <th>etaB</th>\n",
+       "      <th>phiB</th>\n",
+       "      <th>ID</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>3.122201</td>\n",
+       "      <td>3.719456</td>\n",
+       "      <td>4.323421</td>\n",
+       "      <td>1.630143</td>\n",
+       "      <td>0.000531</td>\n",
+       "      <td>0.640957</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.703629</td>\n",
+       "      <td>0.000070</td>\n",
+       "      <td>0.031249</td>\n",
+       "      <td>9.268527</td>\n",
+       "      <td>0.010537</td>\n",
+       "      <td>3.450082</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.881765</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>2.064923</td>\n",
+       "      <td>4.255869</td>\n",
+       "      <td>4.096291</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1.637884</td>\n",
+       "      <td>3.518827</td>\n",
+       "      <td>3.759710</td>\n",
+       "      <td>0.859436</td>\n",
+       "      <td>0.000023</td>\n",
+       "      <td>0.000819</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.938859</td>\n",
+       "      <td>0.000084</td>\n",
+       "      <td>0.009211</td>\n",
+       "      <td>0.705745</td>\n",
+       "      <td>0.025095</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.164516</td>\n",
+       "      <td>0.934475</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>9.074567</td>\n",
+       "      <td>3.839642</td>\n",
+       "      <td>0.803946</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>5.914249</td>\n",
+       "      <td>2.050131</td>\n",
+       "      <td>2.825190</td>\n",
+       "      <td>0.836388</td>\n",
+       "      <td>0.008967</td>\n",
+       "      <td>0.000260</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.907762</td>\n",
+       "      <td>0.000664</td>\n",
+       "      <td>0.004720</td>\n",
+       "      <td>0.009134</td>\n",
+       "      <td>0.020543</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.420740</td>\n",
+       "      <td>1.009091</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>5.604867</td>\n",
+       "      <td>3.031174</td>\n",
+       "      <td>6.268456</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>3.334497</td>\n",
+       "      <td>2.643797</td>\n",
+       "      <td>3.563844</td>\n",
+       "      <td>0.680674</td>\n",
+       "      <td>0.000075</td>\n",
+       "      <td>0.995665</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.001192</td>\n",
+       "      <td>0.001169</td>\n",
+       "      <td>0.002479</td>\n",
+       "      <td>0.192381</td>\n",
+       "      <td>0.012890</td>\n",
+       "      <td>331.512512</td>\n",
+       "      <td>0.580372</td>\n",
+       "      <td>0.846497</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>5.689791</td>\n",
+       "      <td>3.920532</td>\n",
+       "      <td>5.792208</td>\n",
+       "      <td>3</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1.271318</td>\n",
+       "      <td>3.021868</td>\n",
+       "      <td>0.290476</td>\n",
+       "      <td>1.350179</td>\n",
+       "      <td>0.000375</td>\n",
+       "      <td>0.000017</td>\n",
+       "      <td>-999</td>\n",
+       "      <td>0.989256</td>\n",
+       "      <td>0.000040</td>\n",
+       "      <td>0.009149</td>\n",
+       "      <td>0.317107</td>\n",
+       "      <td>0.024926</td>\n",
+       "      <td>-999.000000</td>\n",
+       "      <td>0.417181</td>\n",
+       "      <td>0.909183</td>\n",
+       "      <td>-1</td>\n",
+       "      <td>7.166367</td>\n",
+       "      <td>2.956910</td>\n",
+       "      <td>2.446713</td>\n",
+       "      <td>4</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "    ptTrack  etaTrack  phiTrack  track_quality      PIDe      PIDk  PIDmu  \\\n",
+       "0  3.122201  3.719456  4.323421       1.630143  0.000531  0.640957   -999   \n",
+       "1  1.637884  3.518827  3.759710       0.859436  0.000023  0.000819   -999   \n",
+       "2  5.914249  2.050131  2.825190       0.836388  0.008967  0.000260   -999   \n",
+       "3  3.334497  2.643797  3.563844       0.680674  0.000075  0.995665   -999   \n",
+       "4  1.271318  3.021868  0.290476       1.350179  0.000375  0.000017   -999   \n",
+       "\n",
+       "      PIDpi      PIDp  PIDghost        IP     IPerr    vertexIP      EOverP  \\\n",
+       "0  0.703629  0.000070  0.031249  9.268527  0.010537    3.450082 -999.000000   \n",
+       "1  0.938859  0.000084  0.009211  0.705745  0.025095 -999.000000    0.164516   \n",
+       "2  0.907762  0.000664  0.004720  0.009134  0.020543 -999.000000    0.420740   \n",
+       "3  0.001192  0.001169  0.002479  0.192381  0.012890  331.512512    0.580372   \n",
+       "4  0.989256  0.000040  0.009149  0.317107  0.024926 -999.000000    0.417181   \n",
+       "\n",
+       "        Edx  chargeTrack       ptB      etaB      phiB  ID  \n",
+       "0  0.881765           -1  2.064923  4.255869  4.096291   0  \n",
+       "1  0.934475           -1  9.074567  3.839642  0.803946   1  \n",
+       "2  1.009091           -1  5.604867  3.031174  6.268456   2  \n",
+       "3  0.846497           -1  5.689791  3.920532  5.792208   3  \n",
+       "4  0.909183           -1  7.166367  2.956910  2.446713   4  "
+      ]
+     },
+     "execution_count": 25,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "data_max_pt.head()\n",
+    "# kaggle_data_max_pt.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# take training collision ids\n",
+    "train_track = data_max_pt.iloc[numpy.in1d(data_max_pt.ID, trainID), :].drop('ID', axis=1)\n",
+    "train_target = dataB.iloc[numpy.in1d(dataB.ID, trainID), :]['chargeB'].values\n",
+    "# take test collision ids\n",
+    "test_track = data_max_pt.iloc[numpy.in1d(data_max_pt.ID, testID), :].drop('ID', axis=1)\n",
+    "test_target = dataB.iloc[numpy.in1d(dataB.ID, testID), :]['chargeB'].values\n",
+    "\n",
+    "# add the cosine data:\n",
+    "train_track.columns\n",
+    "train_track['cosines']=numpy.cos(train_track['phiB']-train_track['phiTrack'])\n",
+    "train_track['absEtas']=numpy.abs(train_track['etaB']-train_track['etaTrack'])\n",
+    "test_track['cosines']=numpy.cos(test_track['phiB']-test_track['phiTrack'])\n",
+    "test_track['absEtas']=numpy.abs(test_track['etaB']-test_track['etaTrack'])\n",
+    "\n",
+    "kaggle_data_max_pt['cosines']=numpy.cos(kaggle_data_max_pt['phiB']-kaggle_data_max_pt['phiTrack'])\n",
+    "kaggle_data_max_pt['absEtas']=numpy.abs(kaggle_data_max_pt['etaB']-kaggle_data_max_pt['etaTrack'])\n",
+    "kaggle_data_max_pt=kaggle_data_max_pt.drop('ID', axis=1)\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# mixing parameters:\n",
+    "EfeaturesTrain=pd.DataFrame()\n",
+    "EfeaturesTest=pd.DataFrame()\n",
+    "Efeatureskaggle=pd.DataFrame()\n",
+    "for i in train_track.columns:\n",
+    "    for j in train_track.columns:\n",
+    "        name=i+j\n",
+    "        EfeaturesTrain[name]=train_track[i]/train_track[j]\n",
+    "        EfeaturesTest[name]=test_track[i]/test_track[j]\n",
+    "        Efeatureskaggle[name]=kaggle_data_max_pt[i]/kaggle_data_max_pt[j]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "#         print name\n",
+    "EfeaturesTrain.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.shape\n",
+    "Traindf=pd.concat([train_track, EfeaturesTrain], axis=1)\n",
+    "Testdf=pd.concat([test_track, EfeaturesTest], axis=1)\n",
+    "kaggledf=pd.concat([kaggle_data_max_pt, Efeatureskaggle], axis=1)\n",
+    "\n",
+    "\n",
+    "\n",
+    "kaggledf.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "# import xgboost as xgb\n",
+    "# # read in data\n",
+    "# dtrain = xgb.DMatrix('demo/data/agaricus.txt.train')\n",
+    "# dtest = xgb.DMatrix('demo/data/agaricus.txt.test')\n",
+    "# # specify parameters via map\n",
+    "# param = {'max_depth':2, 'eta':1, 'silent':1, 'objective':'binary:logistic' }\n",
+    "# num_round = 2\n",
+    "# bst = xgb.train(param, dtrain, num_round)\n",
+    "# # make prediction\n",
+    "# preds = bst.predict(dtest)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.head()\n",
+    "train_target\n",
+    "# train_track[0:20]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# kaggle_data_max_pt.head()\n",
+    "# kaggle_data_max_pt.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf1 = RandomForestClassifier(random_state=42,n_estimators=15, min_samples_leaf=10,max_leaf_nodes=100)\n",
+    "clf2 = DecisionTreeClassifier(max_depth=6,min_samples_leaf=10)                                 \n",
+    "clf3 = GaussianNB()\n",
+    "clf4 = LogisticRegression()\n",
+    "clf5 = Ridge()\n",
+    "\n",
+    "# clf5 = KNeighborsClassifier(n_neighbors=10)\n",
+    "lr = LogisticRegression()\n",
+    "predictMatrix=pd.DataFrame()\n",
+    "predictProbMatrix=pd.DataFrame()\n",
+    "# sclf = StackingClassifier(cla ta_classifier=lr)\n",
+    "\n",
+    "for clf, label in zip([clf1, clf2, clf3,clf4,clf5], \n",
+    "                      ['Random Forest', \n",
+    "                       'Decision Tree', \n",
+    "                       'Naive Bayes',\n",
+    "                       'Logistic regression',\n",
+    "                       'Ridge'\n",
+    "                       ]):\n",
+    "    \n",
+    "    clf.fit(train_track, train_target)\n",
+    "    predictMatrix[label]=clf.predict(train_track)\n",
+    "    try:\n",
+    "        predictProbMatrix[label]=clf.predict_proba(train_track)[:, 1]\n",
+    "        print label, roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "        print label, roc_auc_score(test_target, clf.predict_proba(test_track)[:, 1])\n",
+    "    except: \n",
+    "        pass\n",
+    " "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# improving random forest parameters:\n",
+    "for n_estimators in [150]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_depth=8)\n",
+    "    clf1.fit(Traindf, train_target)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "print  roc_auc_score(train_target, clf1.predict_proba(Traindf)[:, 1]),\n",
+    "print 'test:', roc_auc_score(test_target, clf1.predict_proba(Testdf)[:, 1])\n",
+    "\n",
+    "create_solution(clf1.predict_proba(kaggledf)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf1.estimator_params"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "-- All features; training over 0.8\n",
+    "clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=15, min_samples_leaf=10,max_leaf_nodes=100)\n",
+    "0.593431100328 test: 0.592875283872 (0.57418 kaggle)\n",
+    "\n",
+    "clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=15, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='entropy')\n",
+    " 0.592324694327 test: 0.591882995435\n",
+    "        \n",
+    "for n_estimators in [15,20,30,40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_features=5)\n",
+    "    clf1.fit(train_track, train_target)\n",
+    "   0.591919714747 test: 0.591294530235\n",
+    "0.592935744096 test: 0.592328341639\n",
+    "0.595333891158 test: 0.594645982716\n",
+    "0.596227659758 test: 0.595557600077\n",
+    "kaggle:0.57460\n",
+    "----------------------\n",
+    "for n_estimators in [15,20,30,40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "                              \n",
+    "   \n",
+    "0.593431100328 test: 0.592875283872\n",
+    "0.594023597111 test: 0.593493720285\n",
+    "0.595202959191 test: 0.594739974399\n",
+    "0.596633070053 test: 0.596192431842\n",
+    "kaggle: 0.57510\n",
+    "--------\n",
+    "for n_estimators in [50]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "0.597736985909 test: 0.597230318676\n",
+    "kaggle:0.57523\n",
+    "------\n",
+    "for n_estimators in [100]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "around 0.6\n",
+    "kaggle:0.57512\n",
+    "---------\n",
+    "\n",
+    "for n_estimators in [200]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "    clf1.fit(train_track, train_target)\n",
+    "\n",
+    "0.601892190046 test: 0.601301739753\n",
+    "kaggle:0.57546                   \n",
+    "------\n",
+    "for n_estimators in [40]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini')\n",
+    "0.596633070053 test: 0.596192431842\n",
+    "kaggle:0.57510  \n",
+    "\n",
+    "------\n",
+    "non linear data:\n",
+    "for n_estimators in [80]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_depth=7)\n",
+    "    clf1.fit(Traindf, train_target)\n",
+    " \n",
+    " 0.590912098515 test: 0.588632715086\n",
+    "kaggle:0.57576 \n",
+    "\n",
+    "for n_estimators in [150]:\n",
+    "    clf1 = RandomForestClassifier(random_state=42,\n",
+    "                              n_estimators=n_estimators, min_samples_leaf=10,max_leaf_nodes=100,\n",
+    "                              criterion='gini',max_depth=8)\n",
+    "    clf1.fit(Traindf, train_target)\n",
+    "\n",
+    "0.592988342462 test: 0.590449508233\n",
+    "kaggle:0.57586"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "       \n",
+    "gb_clf = GradientBoostingClassifier(n_estimators=80, learning_rate=0.4, max_depth=4)\n",
+    "new_trainY = train_target\n",
+    "new_testY = test_target\n",
+    "# fit the GB\n",
+    "gb_clf.fit(train_track, new_trainY)\n",
+    "\n",
+    "# compute qualtity, ROC AUC, after adding one more estimator into the ensemble\n",
+    "# use for this `staged_predict_proba` - iterator over predictions on each boosting iteration\n",
+    "test_qualities = []"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "for p in gb_clf.staged_predict_proba(test_track):\n",
+    "    test_qualities.append(roc_auc_score(new_testY, p[:, 1]))\n",
+    "plt.plot(test_qualities)\n",
+    "\n",
+    "predictMatrix['Ridge']=(predictMatrix['Ridge']>0)*2-1\n",
+    "create_solution(gb_clf.predict_proba(kaggle_data_max_pt)[:, 1])\n",
+    "\n",
+    "print label, roc_auc_score(test_target, clf1.predict_proba(test_track)[:, 1])\n",
+    "create_solution(clf1.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# predictMatrix=predictMatrix.drop(['True','Combined'],axis=1)\n",
+    "predictMatrix[10:100]\n",
+    "# predictProbMatrix[0:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "predictMatrix=predictMatrix.drop(['True','Combined'],axis=1)\n",
+    "log_reg = LogisticRegression()\n",
+    "X=numpy.array(predictMatrix)\n",
+    "log_reg.fit(X, train_target)\n",
+    "# lin_reg.coef_=[max(0,i) for i in lin_reg.coef_]\n",
+    "print log_reg.coef_\n",
+    "predictMatrix['Combined']=log_reg.predict(X)\n",
+    "predictMatrix['True']=train_target\n",
+    "predictMatrix[1:150]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "predictMatrix[1:100]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "print label, roc_auc_score(train_target, lin_reg.predict(train_track)),\n",
+    "print label, roc_auc_score(test_target, lin_reg.predict(test_track))\n",
+    "\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# Decision tree:\n",
+    "test_track0, test_track2, test_target0,test_target2 = train_test_split(test_track,test_target, random_state=42, train_size=0.60)\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "\n",
+    "max_depth_V=[10]\n",
+    "# max_depth_V=[6]\n",
+    "min_samples_leaf_V=[10]\n",
+    "# min_samples_leaf_V=[10]\n",
+    "roc_auc_Test=[]\n",
+    "roc_auc_Test2=[]\n",
+    "for max_depth in max_depth_V:\n",
+    "    for min_samples_leaf in min_samples_leaf_V:\n",
+    "        DTC=DecisionTreeClassifier(max_depth=max_depth,min_samples_leaf=min_samples_leaf,\n",
+    "                                   max_leaf_nodes=40,class_weight=\"balanced\")\n",
+    "        DTC.fit(train_track, train_target)\n",
+    "        roc_auc_Test.append(roc_auc_score(test_target0, DTC.predict_proba(test_track0)[:, 1]))\n",
+    "        roc_auc_Test2.append(roc_auc_score(test_target2, DTC.predict_proba(test_track2)[:, 1]))\n",
+    "\n",
+    "        print 'max depth',max_depth,'train:',\n",
+    "        \n",
+    "        print 'min_samples_leaf',min_samples_leaf,\n",
+    "        print roc_auc_score(train_target, DTC.predict_proba(train_track)[:, 1]),\n",
+    "        print 'test:',roc_auc_Test[-1],\n",
+    "        print 'test2:',roc_auc_Test2[-1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(DTC.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.ensemble import RandomForestClassifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "n_estimators=[2]\n",
+    "max_leaf_nodesV=[3]\n",
+    "\n",
+    "param_grid = [\n",
+    "  {'n_estimators': [50],'max_leaf_nodes':[5,10,30,100],'min_samples_leaf':[10] }\n",
+    " ]\n",
+    "\n",
+    "classf = RandomForestClassifier()\n",
+    "clf = GridSearchCV(classf, param_grid)\n",
+    "clf.fit(train_track, train_target)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "sorted(clf.grid_scores_)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "# for n_s in n_estimators:\n",
+    "#     for mln in max_leaf_nodesV:\n",
+    "#         clf = RandomForestClassifier(n_estimators=n_s, min_samples_leaf=10,max_leaf_nodes=mln,\n",
+    "#                                     random_state=42)\n",
+    "#         clf.fit(train_track, train_target,)\n",
+    "\n",
+    "#         print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "#         print roc_auc_score(test_target, clf.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "mln=50\n",
+    "n_s=100\n",
+    "clf = RandomForestClassifier(n_estimators=n_s, min_samples_leaf=10,max_leaf_nodes=mln,random_state=42)\n",
+    "clf.fit(train_track, train_target)\n",
+    "\n",
+    "print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, clf.predict_proba(train_track)[:, 1]),\n",
+    "print roc_auc_score(test_target0, clf.predict_proba(test_track0)[:, 1]),\n",
+    "print roc_auc_score(test_target2, clf.predict_proba(test_track2)[:, 1]),"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(clf.predict_proba(kaggle_data_max_pt)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "clf.feature_importances_\n",
+    "df=pandas.DataFrame({'Features':test_track.columns,'Importance':clf.feature_importances_\n",
+    "})\n",
+    "df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.ensemble import GradientBoostingClassifier \n",
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "n_estimators=[20]\n",
+    "max_leaf_nodesV=[10,40,]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "for n_s in n_estimators:\n",
+    "    for mln in max_leaf_nodesV:\n",
+    "        gbc = GradientBoostingClassifier(n_estimators=n_s, min_samples_leaf=3,max_leaf_nodes=mln,\n",
+    "                                    random_state=42,learning_rate=0.15)\n",
+    "        gbc.fit(train_track, train_target)\n",
+    "\n",
+    "        print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, grdb.predict_proba(train_track)[:, 1]),\n",
+    "        print roc_auc_score(test_target, gbc.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "GradientBoostingClassifier\n",
+    "create_solution(grdb.predict_proba(kaggle_data_max_pt.drop('ID', axis=1))[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.linear_model import Ridge\n",
+    "print Ridge()\n",
+    "for alpha in [0.,0.00001, 0.001, 0.01, 0.1, 1, 10, 100]:\n",
+    "    linear_reg = Ridge(alpha,tol=0.0001)\n",
+    "    linear_reg.fit(train_track, train_target)\n",
+    "#     print roc_auc_score(test_target, linear_reg.predict(test_track))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Compute features:  $\\cos(\\phi_B - \\phi_\\text{track})$ and $| \\eta_B - \\eta_\\text{track} "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "train_track.columns\n",
+    "train_track['cosines']=numpy.cos(train_track['phiB']-train_track['phiTrack'])\n",
+    "train_track['absEtas']=numpy.abs(train_track['etaB']-train_track['etaTrack'])\n",
+    "test_track['cosines']=numpy.cos(test_track['phiB']-test_track['phiTrack'])\n",
+    "test_track['absEtas']=numpy.abs(test_track['etaB']-test_track['etaTrack'])\n",
+    "\n",
+    "kaggle_data_max_pt['cosines']=numpy.cos(kaggle_data_max_pt['phiB']-kaggle_data_max_pt['phiTrack'])\n",
+    "kaggle_data_max_pt['absEtas']=numpy.abs(kaggle_data_max_pt['etaB']-kaggle_data_max_pt['etaTrack'])\n",
+    "\n",
+    "# train_track.head()\n",
+    "# test_track.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.linear_model import Ridge\n",
+    "print Ridge()\n",
+    "for alpha in [0.,0.00001, 0.001, 0.01, 0.1, 1, 10, 100]:\n",
+    "    linear_reg = Ridge(alpha,tol=0.0001)\n",
+    "    linear_reg.fit(train_track, train_target)\n",
+    "#     print roc_auc_score(test_target, linear_reg.predict(test_track))\n",
+    "    \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "max_leaf_nodesV=[100,120,140]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "n_estimators=[25,30,40,50]\n",
+    "learning_rate=0.1\n",
+    "print learning_rate\n",
+    "n_estimators=[10]\n",
+    "max_leaf_nodesV=[10,20]\n",
+    "# min_samples_leaf=[5,10,20,50,70]\n",
+    "for n_s in n_estimators:\n",
+    "    for mln in max_leaf_nodesV:\n",
+    "        gbc = GradientBoostingClassifier(n_estimators=n_s, min_samples_leaf=5,max_leaf_nodes=mln,\n",
+    "                                    random_state=42,learning_rate=learning_rate)\n",
+    "        gbc.fit(train_track, train_target)\n",
+    "\n",
+    "        print 'n_s:',n_s,'mln:',mln,'tra/test:',roc_auc_score(train_target, GBC.predict_proba(train_track)[:, 1]),\n",
+    "        print roc_auc_score(test_target, gbc.predict_proba(test_track)[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "create_solution(gbc.predict_proba(kaggle_data_max_pt.drop('ID', axis=1))[:, 1])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "GBC.feature_importances_\n",
+    "df=pandas.DataFrame({'Features':test_track.columns,'Importance':GBC.feature_importances_\n",
+    "})\n",
+    "\n",
+    "df\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "** Major Goal. ** Participate in Flavour Tagging kaggle! Don't forget about feature engineering (some hints may appear in the chat). It is recommended first reading about the available features."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "0.15\n",
+    "n_s: 10 mln: 10 tra/test: 0.576105927237 0.580282330033"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# References\n",
+    "\n",
+    "- [Introduction to boosted trees](https://xgboost.readthedocs.io/en/latest/model.html)\n",
+    "- Sklearn's [tutorial](http://nbviewer.jupyter.org/urls/s3.amazonaws.com/datarobotblog/notebooks/gbm-tutorial.ipynb) on tuning GBDT."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 2",
+   "language": "python",
+   "name": "python2"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 2
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython2",
+   "version": "2.7.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}
